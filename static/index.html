@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PPTX AI Generator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+  <!-- Header -->
+  <header class="bg-white shadow-sm border-b">
+    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+      <h1 class="text-xl font-bold text-gray-800">PPTX AI Generator</h1>
+      <span class="text-sm text-gray-400">模板填空 &rarr; AI 生成 &rarr; 一键导出</span>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-6 py-8 space-y-8">
+
+    <!-- Step 1: Upload & Scan -->
+    <section id="step1" class="bg-white rounded-xl shadow p-6">
+      <h2 class="text-lg font-semibold text-gray-700 mb-4">1. 选择模板</h2>
+      <div class="flex items-center gap-4">
+        <label class="block">
+          <span class="sr-only">上传模板</span>
+          <input type="file" id="fileInput" accept=".pptx"
+                 class="block w-full text-sm text-gray-500
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-lg file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-blue-50 file:text-blue-700
+                        hover:file:bg-blue-100 cursor-pointer" />
+        </label>
+        <button id="btnScan" onclick="handleScan()"
+                class="px-5 py-2 bg-blue-600 text-white rounded-lg
+                       hover:bg-blue-700 transition text-sm font-medium">
+          解析占位符
+        </button>
+      </div>
+      <div id="scanStatus" class="mt-3 text-sm text-gray-500"></div>
+    </section>
+
+    <!-- Step 2: Select & Generate -->
+    <section id="step2" class="bg-white rounded-xl shadow p-6 hidden">
+      <h2 class="text-lg font-semibold text-gray-700 mb-4">2. 选择占位符并生成内容</h2>
+
+      <!-- Global context (optional) -->
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-600 mb-1">
+          全局背景 <span class="text-gray-400 font-normal">(可选，所有生成都会参考)</span>
+        </label>
+        <input id="globalContext" type="text"
+               class="w-full border border-gray-300 rounded-lg px-3 py-2
+                      text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+               placeholder="例如：这是一份面向投资人展示的 Q3 业务总结 PPT" />
+      </div>
+
+      <!-- Clickable placeholder tags -->
+      <div class="mb-2">
+        <span class="text-sm font-medium text-gray-600">点击选择需要生成的占位符：</span>
+      </div>
+      <div id="placeholderTags" class="flex flex-wrap gap-2 mb-4"></div>
+
+      <!-- Per-tag prompt areas (dynamically shown) -->
+      <div id="tagPromptAreas" class="space-y-3 mb-4"></div>
+
+      <!-- Batch generate -->
+      <button id="btnBatchGenerate" onclick="handleBatchGenerate()"
+              class="px-5 py-2 bg-purple-600 text-white rounded-lg
+                     hover:bg-purple-700 transition text-sm font-medium">
+        批量生成已选内容
+      </button>
+      <div id="generateStatus" class="mt-3 text-sm text-gray-500"></div>
+    </section>
+
+    <!-- Step 3: Edit Form -->
+    <section id="step3" class="bg-white rounded-xl shadow p-6 hidden">
+      <h2 class="text-lg font-semibold text-gray-700 mb-4">3. 编辑内容</h2>
+      <div id="editForm" class="space-y-4"></div>
+    </section>
+
+    <!-- Step 4: Export -->
+    <section id="step4" class="bg-white rounded-xl shadow p-6 hidden">
+      <h2 class="text-lg font-semibold text-gray-700 mb-4">4. 导出</h2>
+      <button id="btnExport" onclick="handleExport()"
+              class="px-6 py-3 bg-green-600 text-white rounded-lg
+                     hover:bg-green-700 transition text-sm font-semibold">
+        导出 PPTX
+      </button>
+      <div id="exportStatus" class="mt-3 text-sm text-gray-500"></div>
+    </section>
+
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

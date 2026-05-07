@@ -1,0 +1,51 @@
+"""
+Pydantic data models for the template-based PPTX generation system.
+"""
+from pydantic import BaseModel, Field
+from typing import Dict, List, Optional
+
+
+class PlaceholderInfo(BaseModel):
+    """Records the location of a single {{...}} placeholder within the PPTX."""
+    name: str = Field(..., description="Placeholder name without braces, e.g. 'User_Input_Title'")
+    slide_index: int = Field(..., description="1-based slide index")
+    container_type: str = Field(..., description="text_box | table_cell | notes | smartart")
+    text_box_index: Optional[int] = None
+    paragraph_index: int = 0
+    table_index: Optional[int] = None
+    row_index: Optional[int] = None
+    cell_index: Optional[int] = None
+    paragraph_text: str = Field("", description="Full merged text of the paragraph")
+    run_texts: List[str] = Field(default_factory=list)
+    run_styles: List[dict] = Field(default_factory=list)
+    run_lengths: List[int] = Field(default_factory=list)
+    xpath: str = Field("", description="Extra path info (e.g. diagram drawing path)")
+
+
+class SlidePlaceholderGroup(BaseModel):
+    slide_index: int
+    placeholders: List[PlaceholderInfo]
+
+
+class ScanResult(BaseModel):
+    total_placeholders: int
+    unique_placeholders: List[str] = Field(..., description="Deduplicated placeholder names")
+    details: List[PlaceholderInfo]
+    slides: List[SlidePlaceholderGroup]
+
+
+class GenerateRequest(BaseModel):
+    user_input: str = Field("", description="Global context / topic description (optional)")
+    items: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Placeholder name -> per-placeholder prompt. "
+                    "Only these placeholders will be generated.",
+    )
+
+
+class GenerateResponse(BaseModel):
+    content: Dict[str, str] = Field(..., description="Placeholder name -> generated text")
+
+
+class ExportRequest(BaseModel):
+    content: Dict[str, str] = Field(..., description="Placeholder name -> final text")

@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+templates/uploaded_template.pptx
+.env
