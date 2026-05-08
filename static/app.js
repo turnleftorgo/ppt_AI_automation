@@ -3,6 +3,7 @@ let templates = [];           // [{ template_id, template_name, placeholders }]
 let selectedTemplateId = null;
 let finalData = {};           // { placeholder_key: final text }
 let generatingSet = new Set(); // placeholders currently generating
+let chatHistory = {};          // { placeholder_name: [{ role, content }] }
 
 // ── Init: Load templates on page load ────────────────────────────────────────
 
@@ -53,6 +54,7 @@ function handleTemplateChange(value) {
   // Reset state
   finalData = {};
   generatingSet.clear();
+  chatHistory = {};
 
   // Render placeholders
   renderPlaceholders(template.placeholders);
@@ -72,27 +74,39 @@ function renderPlaceholders(placeholders) {
     div.id = `row-${cssId(name)}`;
 
     div.innerHTML = `
-      <!-- Header: placeholder name + generate button -->
+      <!-- Header: placeholder name -->
       <div class="flex items-center gap-3 mb-3">
         <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-mono">
           {${escapeHtml(name)}}
         </span>
-        <div class="flex-1"></div>
-        <div class="flex items-center gap-2">
-          <input type="text" id="prompt-${cssId(name)}"
-                 class="w-64 border border-gray-300 rounded px-2 py-1 text-sm
-                        focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                 placeholder="输入提示词..." />
-          <button onclick="handleGenerate('${escapeJs(name)}')"
-                  id="btn-${cssId(name)}"
-                  class="px-3 py-1 bg-purple-500 text-white rounded text-xs
-                         hover:bg-purple-600 transition disabled:opacity-50">
-            生成
-          </button>
+      </div>
+
+      <!-- Chat area -->
+      <div class="mb-3">
+        <label class="block text-xs text-gray-500 mb-1">对话</label>
+        <div id="chat-${cssId(name)}"
+             class="border border-gray-200 rounded-lg p-3 bg-gray-50
+                    min-h-[60px] max-h-[200px] overflow-y-auto text-sm space-y-2">
+          <div class="text-gray-400 text-xs italic">输入提示词开始对话...</div>
         </div>
       </div>
 
-      <!-- Final result textarea (manual edit fallback) -->
+      <!-- Chat input -->
+      <div class="flex items-center gap-2 mb-3">
+        <input type="text" id="prompt-${cssId(name)}"
+               onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();handleGenerate('${escapeJs(name)}')}"
+               class="flex-1 border border-gray-300 rounded px-3 py-1.5 text-sm
+                      focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+               placeholder="输入提示词，如：帮我写一句问题描述..." />
+        <button onclick="handleGenerate('${escapeJs(name)}')"
+                id="btn-${cssId(name)}"
+                class="shrink-0 px-4 py-1.5 bg-purple-500 text-white rounded text-sm
+                       hover:bg-purple-600 transition disabled:opacity-50">
+          发送
+        </button>
+      </div>
+
+      <!-- Final result textarea -->
       <div>
         <label class="block text-xs text-gray-500 mb-1">最终结果（可手动修改）</label>
         <textarea id="final-${cssId(name)}" rows="3"
@@ -110,20 +124,24 @@ function renderPlaceholders(placeholders) {
   }
 }
 
-// ── Generate: single placeholder ─────────────────────────────────────────────
+// ── Generate: multi-turn conversation ─────────────────────────────────────────
 
 async function handleGenerate(name) {
-  const promptInput = document.getElementById(`prompt-${cssId(name)}`);
+  const input = document.getElementById(`prompt-${cssId(name)}`);
   const finalTextarea = document.getElementById(`final-${cssId(name)}`);
   const statusEl = document.getElementById(`status-${cssId(name)}`);
   const btn = document.getElementById(`btn-${cssId(name)}`);
 
-  const prompt = (promptInput.value || "").trim();
-  if (!prompt) {
-    statusEl.textContent = "请先填写提示词";
-    statusEl.className = "mt-2 text-xs text-red-500";
-    return;
-  }
+  const message = (input.value || "").trim();
+  if (!message) return;
+
+  // Init history if needed
+  if (!chatHistory[name]) chatHistory[name] = [];
+
+  // Append user message to history & render
+  chatHistory[name].push({ role: "user", content: message });
+  renderChatHistory(name);
+  input.value = "";
 
   generatingSet.add(name);
   btn.disabled = true;
@@ -135,14 +153,26 @@ async function handleGenerate(name) {
     const res = await fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ placeholder_key: name, prompt }),
+      body: JSON.stringify({
+        placeholder_key: name,
+        message,
+        history: chatHistory[name],
+      }),
     });
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
 
-    // Fill the final result textarea
-    finalTextarea.value = data.content;
-    finalData[name] = data.content;
+    // Append AI ack to chat history
+    if (data.ack) {
+      chatHistory[name].push({ role: "assistant", content: data.ack });
+      renderChatHistory(name);
+    }
+
+    // Update final result textarea
+    if (data.content) {
+      finalTextarea.value = data.content;
+      finalData[name] = data.content;
+    }
 
     statusEl.textContent = "生成完成";
     statusEl.className = "mt-2 text-xs text-green-600";
@@ -152,8 +182,32 @@ async function handleGenerate(name) {
   } finally {
     generatingSet.delete(name);
     btn.disabled = false;
-    btn.textContent = "生成";
+    btn.textContent = "发送";
   }
+}
+
+// ── Render chat history ──────────────────────────────────────────────────────
+
+function renderChatHistory(name) {
+  const container = document.getElementById(`chat-${cssId(name)}`);
+  if (!container) return;
+
+  const history = chatHistory[name] || [];
+  if (history.length === 0) {
+    container.innerHTML = '<div class="text-gray-400 text-xs italic">输入提示词开始对话...</div>';
+    return;
+  }
+
+  container.innerHTML = history.map(msg => {
+    const isUser = msg.role === "user";
+    const bubble = isUser
+      ? `<div class="flex justify-end"><div class="bg-blue-100 text-blue-800 px-3 py-1.5 rounded-lg rounded-br-none max-w-[80%] text-sm">${escapeHtml(msg.content)}</div></div>`
+      : `<div class="flex justify-start"><div class="bg-white border border-gray-200 text-gray-700 px-3 py-1.5 rounded-lg rounded-bl-none max-w-[80%] text-sm">${escapeHtml(msg.content)}</div></div>`;
+    return bubble;
+  }).join("");
+
+  // Auto-scroll to bottom
+  container.scrollTop = container.scrollHeight;
 }
 
 // ── Step 3: Export ───────────────────────────────────────────────────────────
@@ -228,7 +282,6 @@ function escapeJs(str) {
 }
 
 function cssId(str) {
-  // Convert a placeholder name into a valid CSS id
   return str.replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 

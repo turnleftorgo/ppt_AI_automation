@@ -34,13 +34,20 @@ class ScanResult(BaseModel):
     slides: List[SlidePlaceholderGroup]
 
 
+class ChatMessage(BaseModel):
+    role: str = Field(..., description="'user' or 'assistant'")
+    content: str
+
+
 class GenerateRequest(BaseModel):
     placeholder_key: str = Field(..., description="The placeholder name to generate content for")
-    prompt: str = Field(..., description="User's prompt for this specific placeholder")
+    message: str = Field(..., description="Current user message")
+    history: List[ChatMessage] = Field(default_factory=list, description="Conversation history")
 
 
 class GenerateResponse(BaseModel):
-    content: str = Field(..., description="Generated text for the placeholder")
+    ack: str = Field("", description="AI's brief acknowledgment (<=50 chars)")
+    content: str = Field("", description="Updated placeholder content")
 
 
 class TemplateInfo(BaseModel):

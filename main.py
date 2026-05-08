@@ -4,6 +4,10 @@ FastAPI entry point for the template-based PPTX generation system.
 import os
 from io import BytesIO
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -64,12 +68,13 @@ async def get_placeholders(template_id: int):
 
 @app.post("/api/generate")
 async def generate(req: GenerateRequest):
-    """Call LLM to generate content for a single placeholder."""
-    if not req.placeholder_key or not req.prompt:
-        raise HTTPException(400, "缺少占位符名称或提示词")
+    """Call LLM to generate content for a single placeholder (multi-turn)."""
+    if not req.placeholder_key or not req.message:
+        raise HTTPException(400, "缺少占位符名称或消息")
     try:
-        content = await generate_content(req.placeholder_key, req.prompt)
-        return {"content": content}
+        history = [h.model_dump() for h in req.history]
+        result = await generate_content(req.placeholder_key, req.message, history)
+        return result  # { ack, content }
     except Exception as e:
         raise HTTPException(500, f"AI 生成失败: {e}")
 
