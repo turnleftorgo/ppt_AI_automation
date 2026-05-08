@@ -20,7 +20,7 @@ async function init() {
     for (const t of templates) {
       const opt = document.createElement("option");
       opt.value = t.template_id;
-      opt.textContent = `${t.template_name}（${t.placeholders.length} 个占位符）`;
+      opt.textContent = t.template_name;
       select.appendChild(opt);
     }
     info.textContent = `已加载 ${templates.length} 个内置模板`;
@@ -77,7 +77,7 @@ function renderPlaceholders(placeholders) {
       <!-- Header: placeholder name -->
       <div class="flex items-center gap-3 mb-3">
         <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-mono">
-          {${escapeHtml(name)}}
+          标题：${escapeHtml(name)}
         </span>
       </div>
 
