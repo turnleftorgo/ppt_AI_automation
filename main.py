@@ -2,11 +2,9 @@
 FastAPI entry point for the template-based PPTX generation system.
 """
 import os
-import shutil
-import tempfile
 from io import BytesIO
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -20,12 +18,9 @@ app = FastAPI(title="PPTX AI Generator")
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-# ── Template path ─────────────────────────────────────────────────────────────
+# ── Built-in template path ────────────────────────────────────────────────────
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
-DEFAULT_TEMPLATE = os.path.join(TEMPLATE_DIR, "base_template.pptx")
-
-# Global state: the currently active template path
-_active_template: str = DEFAULT_TEMPLATE
+BUILTIN_TEMPLATE = os.path.join(TEMPLATE_DIR, "品質改善報告模板Template.pptx")
 
 ppt_core = PPTCore()
 
@@ -39,38 +34,41 @@ async def index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
-@app.post("/api/upload")
-async def upload_template(file: UploadFile = File(...)):
-    """Upload a custom .pptx template."""
-    global _active_template
-    os.makedirs(TEMPLATE_DIR, exist_ok=True)
-    path = os.path.join(TEMPLATE_DIR, "uploaded_template.pptx")
-    with open(path, "wb") as f:
-        content = await file.read()
-        f.write(content)
-    _active_template = path
-    return {"status": "ok", "filename": file.filename}
-
-
-@app.get("/api/placeholders")
-async def get_placeholders():
-    """Scan the active template and return all {{...}} placeholders."""
-    if not os.path.exists(_active_template):
-        raise HTTPException(404, "模板文件不存在。请先上传一个 .pptx 模板。")
+@app.get("/api/templates")
+async def get_templates():
+    """Return the list of built-in templates with their placeholders."""
+    if not os.path.exists(BUILTIN_TEMPLATE):
+        raise HTTPException(404, "内置模板文件不存在。")
     try:
-        result = ppt_core.scan_placeholders(_active_template)
-        return result
+        return ppt_core.list_templates(BUILTIN_TEMPLATE)
     except Exception as e:
         raise HTTPException(500, f"解析模板失败: {e}")
 
 
+@app.get("/api/placeholders/{template_id}")
+async def get_placeholders(template_id: int):
+    """Return placeholders for a specific template (by slide index)."""
+    if not os.path.exists(BUILTIN_TEMPLATE):
+        raise HTTPException(404, "内置模板文件不存在。")
+    try:
+        all_templates = ppt_core.list_templates(BUILTIN_TEMPLATE)
+        for t in all_templates:
+            if t["template_id"] == template_id:
+                return t
+        raise HTTPException(404, f"模板 ID {template_id} 不存在。")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"解析占位符失败: {e}")
+
+
 @app.post("/api/generate")
 async def generate(req: GenerateRequest):
-    """Call LLM to generate content for selected placeholders."""
-    if not req.items:
-        raise HTTPException(400, "未选择任何占位符")
+    """Call LLM to generate content for a single placeholder."""
+    if not req.placeholder_key or not req.prompt:
+        raise HTTPException(400, "缺少占位符名称或提示词")
     try:
-        content = await generate_content(req.user_input, req.items)
+        content = await generate_content(req.placeholder_key, req.prompt)
         return {"content": content}
     except Exception as e:
         raise HTTPException(500, f"AI 生成失败: {e}")
@@ -78,11 +76,11 @@ async def generate(req: GenerateRequest):
 
 @app.post("/api/export")
 async def export_pptx(req: ExportRequest):
-    """Fill the template with final content and return the .pptx for download."""
-    if not os.path.exists(_active_template):
-        raise HTTPException(404, "模板文件不存在")
+    """Fill a single template slide with final content and return the .pptx."""
+    if not os.path.exists(BUILTIN_TEMPLATE):
+        raise HTTPException(404, "内置模板文件不存在")
     try:
-        data = ppt_core.fill_to_bytes(_active_template, req.content)
+        data = ppt_core.export_single_slide(BUILTIN_TEMPLATE, req.template_id, req.final_data)
         return StreamingResponse(
             BytesIO(data),
             media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",

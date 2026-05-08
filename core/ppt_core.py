@@ -20,6 +20,7 @@ NS = {
     "c": "http://schemas.openxmlformats.org/drawingml/2006/chart",
     "dgm": "http://schemas.openxmlformats.org/drawingml/2006/diagram",
     "dsp": "http://schemas.microsoft.com/office/drawing/2008/diagram",
+    "pkg": "http://schemas.openxmlformats.org/package/2006/relationships",
 }
 
 PLACEHOLDER_RE = re.compile(r"\{([^}]+)\}")
@@ -31,6 +32,150 @@ class PPTCore:
     # ══════════════════════════════════════════════════════════════════════════
     #  PUBLIC API
     # ══════════════════════════════════════════════════════════════════════════
+
+    def list_templates(self, file_path: str) -> list:
+        """
+        Parse a multi-slide PPTX and return one TemplateInfo dict per slide.
+        Each entry contains template_id, template_name, and its placeholders.
+        """
+        from models.schemas import TemplateInfo
+
+        templates = []
+        with ZipFile(file_path, "r") as pptx:
+            slide_paths = self._sorted(pptx, "ppt/slides/slide", ".xml")
+
+            for slide_idx, sp in enumerate(slide_paths, start=1):
+                tree = etree.fromstring(pptx.read(sp))
+
+                # Extract title: first text box's first non-empty paragraph
+                title = self._extract_slide_title(tree, slide_idx)
+
+                # Scan placeholders on this slide only
+                items = []
+                counter = 0
+                counter = self._scan_text_boxes(tree, slide_idx, items, counter)
+                counter = self._scan_tables(tree, slide_idx, items, counter)
+
+                # Also scan notes if present
+                notes_path = sp.replace("slides/slide", "notesSlides/notesSlide")
+                if notes_path in pptx.namelist():
+                    counter = self._scan_notes(pptx, notes_path, slide_idx, items, counter)
+
+                unique = list(dict.fromkeys(i["name"] for i in items))
+                templates.append(
+                    TemplateInfo(
+                        template_id=slide_idx,
+                        template_name=title,
+                        placeholders=unique,
+                    ).model_dump()
+                )
+
+        return templates
+
+    def _extract_slide_title(self, tree, slide_idx: int) -> str:
+        """Extract a human-readable title from a slide (first text box text)."""
+        # Try all text boxes, pick the first non-empty paragraph as title
+        for tb in tree.xpath(".//p:txBody", namespaces=NS):
+            for para in tb.xpath(".//a:p", namespaces=NS):
+                runs = para.xpath(".//a:r", namespaces=NS)
+                merged = ""
+                for r in runs:
+                    t = r.xpath("./a:t", namespaces=NS)
+                    if t and t[0].text:
+                        merged += t[0].text
+                merged = merged.strip()
+                if merged and not PLACEHOLDER_RE.fullmatch(merged):
+                    return merged
+        return f"Slide {slide_idx}"
+
+    def export_single_slide(self, file_path: str, template_id: int,
+                            content_map: Dict[str, str]) -> bytes:
+        """
+        Open the built-in PPTX, delete all slides except template_id,
+        replace placeholders, and return the resulting PPTX as bytes.
+        """
+        scan = self.scan_placeholders(file_path)
+        details = [d for d in scan["details"] if d["slide_index"] == template_id]
+
+        with ZipFile(file_path, "r") as src:
+            slide_paths = self._sorted(src, "ppt/slides/slide", ".xml")
+            rels_path = "ppt/slides/_rels/slide.rels.xml"
+            rels_paths = self._sorted(src, "ppt/slides/_rels/slide", ".xml.rels")
+
+            # Determine which slide files to keep/remove
+            keep_slide = f"ppt/slides/slide{template_id}.xml"
+            keep_rels = f"ppt/slides/_rels/slide{template_id}.xml.rels"
+
+            # Build set of files to remove (other slides + their rels)
+            remove_files = set()
+            for sp in slide_paths:
+                if sp != keep_slide:
+                    remove_files.add(sp)
+            for rp in rels_paths:
+                if rp != keep_rels:
+                    remove_files.add(rp)
+
+            # Parse presentation.xml to strip removed slide references
+            pres_path = "ppt/presentation.xml"
+            pres_tree = etree.fromstring(src.read(pres_path))
+            sld_id_lst = pres_tree.xpath("//p:sldIdLst", namespaces=NS)
+            if sld_id_lst:
+                # Get relationship IDs for all slides
+                pres_rels_path = "ppt/_rels/presentation.xml.rels"
+                pres_rels_tree = etree.fromstring(src.read(pres_rels_path))
+                slide_rids = {}
+                for rel in pres_rels_tree.xpath(
+                    "//pkg:Relationship[@Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide']",
+                    namespaces=NS
+                ):
+                    target = rel.get("Target", "")
+                    rid = rel.get("Id", "")
+                    if target.startswith("slides/slide"):
+                        try:
+                            idx = int(target.replace("slides/slide", "").replace(".xml", ""))
+                            slide_rids[idx] = rid
+                        except ValueError:
+                            pass
+
+                keep_rid = slide_rids.get(template_id)
+                for sld_id in list(sld_id_lst[0]):
+                    if sld_id.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id") != keep_rid:
+                        sld_id_lst[0].remove(sld_id)
+
+                modified = {pres_path: etree.tostring(pres_tree, xml_declaration=True,
+                                                       encoding="UTF-8", standalone=True)}
+
+                # Fill placeholders on the kept slide
+                if details:
+                    slide_tree = etree.fromstring(src.read(keep_slide))
+                    if self._fill_slide(slide_tree, details, content_map):
+                        modified[keep_slide] = etree.tostring(slide_tree, xml_declaration=True,
+                                                               encoding="UTF-8", standalone=True)
+
+                # Also handle notes for this slide
+                notes_path = keep_slide.replace("slides/slide", "notesSlides/notesSlide")
+                note_items = [d for d in details if d["container_type"] == "notes"]
+                if note_items and notes_path in src.namelist():
+                    notes_tree = etree.fromstring(src.read(notes_path))
+                    if self._fill_notes(notes_tree, note_items, content_map):
+                        modified[notes_path] = etree.tostring(notes_tree, xml_declaration=True,
+                                                               encoding="UTF-8", standalone=True)
+
+                # Repack, skipping removed files
+                buf = BytesIO()
+                with ZipFile(buf, "w") as dst:
+                    for entry in src.infolist():
+                        if entry.filename in remove_files:
+                            continue
+                        if entry.filename in modified:
+                            dst.writestr(entry, modified[entry.filename])
+                        else:
+                            dst.writestr(entry, src.read(entry.filename))
+                return buf.getvalue()
+
+        # Fallback: return original if something went wrong
+        with open(file_path, "rb") as f:
+            return f.read()
 
     def scan_placeholders(self, file_path: str) -> dict:
         """

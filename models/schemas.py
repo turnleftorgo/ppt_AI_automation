@@ -35,17 +35,23 @@ class ScanResult(BaseModel):
 
 
 class GenerateRequest(BaseModel):
-    user_input: str = Field("", description="Global context / topic description (optional)")
-    items: Dict[str, str] = Field(
-        default_factory=dict,
-        description="Placeholder name -> per-placeholder prompt. "
-                    "Only these placeholders will be generated.",
-    )
+    placeholder_key: str = Field(..., description="The placeholder name to generate content for")
+    prompt: str = Field(..., description="User's prompt for this specific placeholder")
 
 
 class GenerateResponse(BaseModel):
-    content: Dict[str, str] = Field(..., description="Placeholder name -> generated text")
+    content: str = Field(..., description="Generated text for the placeholder")
+
+
+class TemplateInfo(BaseModel):
+    template_id: int = Field(..., description="1-based slide index")
+    template_name: str = Field(..., description="Display name of the template")
+    placeholders: List[str] = Field(default_factory=list, description="Unique placeholder names in this template")
 
 
 class ExportRequest(BaseModel):
-    content: Dict[str, str] = Field(..., description="Placeholder name -> final text")
+    template_id: int = Field(..., description="Which template slide to export")
+    final_data: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Placeholder name -> final text (after AI + manual editing)",
+    )
