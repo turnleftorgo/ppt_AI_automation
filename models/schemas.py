@@ -1,13 +1,13 @@
 """
-Pydantic data models for the template-based PPTX generation system.
+Pydantic data models for the YAML-driven template system.
 """
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional
 
 
 class PlaceholderInfo(BaseModel):
-    """Records the location of a single {{...}} placeholder within the PPTX."""
-    name: str = Field(..., description="Placeholder name without braces, e.g. 'User_Input_Title'")
+    """Records the location of a single {…} placeholder within the PPTX."""
+    name: str = Field(..., description="Placeholder name without braces")
     slide_index: int = Field(..., description="1-based slide index")
     container_type: str = Field(..., description="text_box | table_cell | notes | smartart")
     text_box_index: Optional[int] = None
@@ -40,9 +40,14 @@ class ChatMessage(BaseModel):
 
 
 class GenerateRequest(BaseModel):
-    placeholder_key: str = Field(..., description="The placeholder name to generate content for")
+    template_id: str = Field(..., description="YAML template ID")
+    placeholder_key: str = Field(..., description="target_placeholder from llm_tasks")
     message: str = Field(..., description="Current user message")
     history: List[ChatMessage] = Field(default_factory=list, description="Conversation history")
+    user_inputs: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Values from Characterize section for Jinja2 substitution",
+    )
 
 
 class GenerateResponse(BaseModel):
@@ -50,15 +55,13 @@ class GenerateResponse(BaseModel):
     content: str = Field("", description="Updated placeholder content")
 
 
-class TemplateInfo(BaseModel):
-    template_id: int = Field(..., description="1-based slide index")
-    template_name: str = Field(..., description="Display name of the template")
-    placeholders: List[str] = Field(default_factory=list, description="Unique placeholder names in this template")
-
-
 class ExportRequest(BaseModel):
-    template_id: int = Field(..., description="Which template slide to export")
+    template_id: str = Field(..., description="YAML template ID")
+    user_inputs: Dict[str, str] = Field(
+        default_factory=dict,
+        description="User inputs for direct mappings",
+    )
     final_data: Dict[str, str] = Field(
         default_factory=dict,
-        description="Placeholder name -> final text (after AI + manual editing)",
+        description="AI-generated + closure placeholder values",
     )

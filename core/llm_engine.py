@@ -12,7 +12,7 @@ API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
-SYSTEM_PROMPT = """你是一个专业的 PPT 品質改善報告内容生成助手。
+DEFAULT_SYSTEM_PROMPT = """你是一个专业的 PPT 品質改善報告内容生成助手。
 
 用户正在填写一个 PPT 模板中的占位符。你需要：
 1. 根据用户的描述生成或修改该占位符的内容
@@ -33,7 +33,12 @@ def _get_client():
     return OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
 
-async def generate_content(placeholder_key: str, message: str, history: list[dict]) -> dict:
+async def generate_content(
+    placeholder_key: str,
+    message: str,
+    history: list[dict],
+    system_prompt: str = None,
+) -> dict:
     """
     Multi-turn conversation generation for a single placeholder.
 
@@ -41,6 +46,7 @@ async def generate_content(placeholder_key: str, message: str, history: list[dic
         placeholder_key: The placeholder being filled
         message: Current user message
         history: Previous conversation [{ role: 'user'|'assistant', content: '...' }]
+        system_prompt: Optional override for the default system prompt
 
     Returns:
         { ack: str, content: str }
@@ -54,7 +60,8 @@ async def generate_content(placeholder_key: str, message: str, history: list[dic
     client = _get_client()
 
     # Build message list: system + history + current
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    effective_system = system_prompt or DEFAULT_SYSTEM_PROMPT
+    messages = [{"role": "system", "content": effective_system}]
     for h in history:
         messages.append({"role": h["role"], "content": h["content"]})
 
