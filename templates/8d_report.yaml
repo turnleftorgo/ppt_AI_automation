@@ -1,0 +1,117 @@
+template_id: "8d_report_v1"
+template_name: "8D 异常处理报告"
+description: "8D异常处理报告模板，包含D1~D8八个阶段"
+ppt_file_path: "8D Report.pptx"
+
+# ── Section 1: User inputs (D1/D2/D8 - Characterize phase) ──────────────────
+user_inputs:
+  - id: "team_info"
+    label: "D1 - Team (团队成员)"
+    placeholder: "请输入团队成员信息"
+    type: "textarea"
+    required: true
+
+  - id: "problem_description"
+    label: "D2 - Problem Description (问题描述)"
+    placeholder: "请详细描述异常情况"
+    type: "textarea"
+    required: true
+
+# ── Section 2: Direct mappings (user input -> PPT placeholder, no AI) ───────
+direct_mappings:
+  - user_input_id: "team_info"
+    target_placeholder: "user input establish the team"
+  - user_input_id: "problem_description"
+    target_placeholder: "user input description"
+
+# ── Section 3: AI generation tasks (grouped by module) ──────────────────────
+llm_tasks:
+  # D3 - Containment
+  - target_placeholder: "Fill in predicted containment"
+    module: "Contain"
+    module_label: "D3 - Containment (临时对策)"
+    prompt: |
+      针对以下异常问题：
+      问题描述：{{problem_description}}
+      团队成员：{{team_info}}
+
+      请给出临时遏制措施（Interim Containment Actions）。
+      要求：
+      1. 明确临时措施的具体内容
+      2. 说明实施范围和有效性
+      3. 内容不要超过100字
+    use_rag: false
+
+  # D4 - Root Cause
+  - target_placeholder: "Fill in predicted causes"
+    module: "Cause"
+    module_label: "D4 - Root Cause (根本原因)"
+    prompt: |
+      针对以下异常问题：
+      问题描述：{{problem_description}}
+
+      请分析根本原因（Root Cause）。
+      要求：
+      1. 使用5Why分析法
+      2. 区分直接原因和根本原因
+      3. 内容不要超过100字
+    use_rag: false
+
+  # D5 - Corrective Actions
+  - target_placeholder: "Fill in list of corrective actions"
+    module: "Corrective"
+    module_label: "D5/D6 - Corrective Actions (纠正措施)"
+    prompt: |
+      针对以下异常问题：
+      问题描述：{{problem_description}}
+
+      请给出永久纠正措施（Permanent Corrective Actions）。
+      要求：
+      1. 针对根本原因制定永久措施
+      2. 明确实施计划
+      3. 内容不要超过100字
+    use_rag: false
+
+  # D6 - Preventive Actions
+  - target_placeholder: "Fill in list of preventive actions"
+    module: "Corrective"
+    module_label: "D5/D6 - Corrective Actions (纠正措施)"
+    prompt: |
+      针对以下异常问题：
+      问题描述：{{problem_description}}
+
+      请给出预防措施（Preventive Actions），防止类似问题再次发生。
+      要求：
+      1. 系统性预防方案
+      2. 流程改进措施
+      3. 内容不要超过100字
+    use_rag: false
+
+# ── Section 4: Closure (D7/D8 - user can chat with AI or fill manually) ────
+closure_tasks:
+  - target_placeholder: "Fill in verification"
+    label: "D7 - Verification (效果验证)"
+    prompt: |
+      针对以下异常问题：
+      问题描述：{{problem_description}}
+
+      请提供效果验证方案（Verification Plan）。
+      要求：
+      1. 验证纠正措施有效性的方法
+      2. 验证时间节点和标准
+      3. 内容不要超过100字
+    use_rag: false
+
+  - target_placeholder: "user input congratulate"
+    label: "D8 - Congratulate (团队表彰)"
+    prompt: |
+      针对以下异常问题的解决：
+      问题描述：{{problem_description}}
+      团队成员：{{team_info}}
+
+      请生成一段团队表彰词（Congratulate the Team）。
+      要求：
+      1. 肯定团队的努力和贡献
+      2. 总结改善成果
+      3. 内容不要超过100字
+    use_rag: false

@@ -447,7 +447,7 @@ function renderPreviewTable(config) {
       html += `<tr class="border-t border-gray-100 align-top">
         <td class="px-4 py-3 text-gray-600">${escapeHtml(inp.label)}</td>
         <td class="px-4 py-2">
-          <textarea id="${key}" rows="4" data-source="userInputs" data-source-key="${escapeJs(inp.id)}"
+          <textarea id="${key}" rows="8" data-source="userInputs" data-source-key="${escapeJs(inp.id)}"
                     oninput="handlePreviewEdit(this)"
                     class="w-full border border-gray-200 rounded px-2 py-1.5 text-sm resize-y
                            focus:ring-2 focus:ring-blue-400 focus:border-transparent bg-white"
@@ -475,7 +475,7 @@ function renderPreviewTable(config) {
         html += `<tr class="border-t border-gray-100 align-top">
           <td class="px-4 py-3 text-gray-600 font-mono text-xs">${escapeHtml(task.target_placeholder)}</td>
           <td class="px-4 py-2">
-            <textarea id="${key}" rows="4" data-source="chatHistory" data-source-key="${escapeJs(task.target_placeholder)}"
+            <textarea id="${key}" rows="8" data-source="chatHistory" data-source-key="${escapeJs(task.target_placeholder)}"
                       oninput="handlePreviewEdit(this)"
                       class="w-full border border-gray-200 rounded px-2 py-1.5 text-sm resize-y
                              focus:ring-2 focus:ring-purple-400 focus:border-transparent bg-white"
@@ -496,7 +496,7 @@ function renderPreviewTable(config) {
       html += `<tr class="border-t border-gray-100 align-top">
         <td class="px-4 py-3 text-gray-600">${escapeHtml(task.label || task.target_placeholder)}</td>
         <td class="px-4 py-2">
-          <textarea id="${key}" rows="4" data-source="chatHistory" data-source-key="${escapeJs(task.target_placeholder)}"
+          <textarea id="${key}" rows="8" data-source="chatHistory" data-source-key="${escapeJs(task.target_placeholder)}"
                     oninput="handlePreviewEdit(this)"
                     class="w-full border border-gray-200 rounded px-2 py-1.5 text-sm resize-y
                            focus:ring-2 focus:ring-green-400 focus:border-transparent bg-white"
