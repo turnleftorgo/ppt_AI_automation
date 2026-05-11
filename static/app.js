@@ -2,9 +2,12 @@
 let templates = [];           // from /api/templates
 let currentConfig = null;     // full YAML config for selected template
 let userInputs = {};          // { input_id: value } from Characterize section
-let finalData = {};           // { target_placeholder: text } from AI + closure
-let chatHistory = {};         // { target_placeholder: [{ role, content }] }
+let chatHistory = {};         // { target_placeholder: [{ role, content, fullContent? }] }
 let generatingSet = new Set();
+
+// Preview field registry: [{ key, label, source, group }]
+// source: 'userInputs' | 'chatHistory'
+let previewFields = [];
 
 // ── Init: Load templates on page load ────────────────────────────────────────
 
@@ -35,10 +38,12 @@ async function init() {
 
 async function handleTemplateChange(templateId) {
   const contentArea = document.getElementById("contentArea");
+  const rightPanel = document.getElementById("rightPanel");
   const desc = document.getElementById("templateDesc");
 
   if (!templateId) {
     contentArea.classList.add("hidden");
+    rightPanel.classList.add("hidden");
     currentConfig = null;
     return;
   }
@@ -54,7 +59,6 @@ async function handleTemplateChange(templateId) {
 
   // Reset state
   userInputs = {};
-  finalData = {};
   chatHistory = {};
   generatingSet.clear();
 
@@ -66,6 +70,12 @@ async function handleTemplateChange(templateId) {
   renderClosure(currentConfig.closure_tasks || []);
 
   contentArea.classList.remove("hidden");
+
+  // Render preview table
+  document.getElementById("previewTitle").textContent =
+    (currentConfig.template_name || "Report") + " Preview";
+  renderPreviewTable(currentConfig);
+  rightPanel.classList.remove("hidden");
 }
 
 // ── Section 1: Characterize ───────────────────────────────────────────────────
@@ -99,7 +109,7 @@ function buildFieldHTML(inp, stateKey) {
           ${escapeHtml(inp.label)} ${reqMark}
         </label>
         <textarea id="input-${inp.id}" rows="3" ${req}
-                  oninput="${stateKey}['${escapeJs(inp.id)}'] = this.value"
+                  oninput="${stateKey}['${escapeJs(inp.id)}'] = this.value; updatePreview()"
                   placeholder="${escapeHtml(inp.placeholder || '')}"
                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm
                          focus:ring-2 focus:ring-blue-500 focus:border-transparent"></textarea>
@@ -112,7 +122,7 @@ function buildFieldHTML(inp, stateKey) {
           ${escapeHtml(inp.label)} ${reqMark}
         </label>
         <input type="date" id="input-${inp.id}" ${req}
-               oninput="${stateKey}['${escapeJs(inp.id)}'] = this.value"
+               oninput="${stateKey}['${escapeJs(inp.id)}'] = this.value; updatePreview()"
                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm
                       focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
       </div>`;
@@ -124,7 +134,7 @@ function buildFieldHTML(inp, stateKey) {
         ${escapeHtml(inp.label)} ${reqMark}
       </label>
       <input type="text" id="input-${inp.id}" ${req}
-             oninput="${stateKey}['${escapeJs(inp.id)}'] = this.value"
+             oninput="${stateKey}['${escapeJs(inp.id)}'] = this.value; updatePreview()"
              placeholder="${escapeHtml(inp.placeholder || '')}"
              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm
                     focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
@@ -193,7 +203,7 @@ function renderAITask(container, task) {
     </div>
 
     <!-- Chat input -->
-    <div class="flex items-center gap-2 mb-3">
+    <div class="flex items-center gap-2">
       <input type="text" id="prompt-${cssId(name)}"
              onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();handleGenerate('${escapeJs(name)}')}"
              class="flex-1 border border-gray-300 rounded px-3 py-1.5 text-sm
@@ -205,16 +215,6 @@ function renderAITask(container, task) {
                      hover:bg-purple-600 transition disabled:opacity-50">
         发送
       </button>
-    </div>
-
-    <!-- Final result textarea -->
-    <div>
-      <label class="block text-xs text-gray-500 mb-1">最终结果（可手动修改）</label>
-      <textarea id="final-${cssId(name)}" rows="3"
-                oninput="finalData['${escapeJs(name)}'] = this.value"
-                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm
-                       focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="AI 生成后自动填入，也可直接手动输入..."></textarea>
     </div>
 
     <div id="status-${cssId(name)}" class="mt-2 text-xs text-gray-400"></div>
@@ -285,19 +285,14 @@ async function handleCharacterizeConfirm() {
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
 
-      // Fill textarea
-      const textarea = document.getElementById(`final-${cssId(name)}`);
-      if (textarea && data.content) {
-        textarea.value = data.content;
-        finalData[name] = data.content;
-      }
-
-      // Add AI ack to chat history
-      if (data.ack) {
-        if (!chatHistory[name]) chatHistory[name] = [];
-        chatHistory[name].push({ role: "assistant", content: data.ack });
-        renderChatHistory(name);
-      }
+      // Store both ack (for chat bubble) and fullContent (for preview/export)
+      if (!chatHistory[name]) chatHistory[name] = [];
+      chatHistory[name].push({
+        role: "assistant",
+        content: data.ack || "",
+        fullContent: data.content || "",
+      });
+      renderChatHistory(name);
 
       if (statusTaskEl) {
         statusTaskEl.textContent = "生成完成";
@@ -317,13 +312,14 @@ async function handleCharacterizeConfirm() {
   btn.textContent = "确认并生成";
   statusEl.textContent = `全部完成 (${completed}/${tasks.length})`;
   statusEl.className = "text-sm text-green-600";
+
+  updatePreview();
 }
 
 // ── Generate: multi-turn conversation ─────────────────────────────────────────
 
 async function handleGenerate(name) {
   const input = document.getElementById(`prompt-${cssId(name)}`);
-  const finalTextarea = document.getElementById(`final-${cssId(name)}`);
   const statusEl = document.getElementById(`status-${cssId(name)}`);
   const btn = document.getElementById(`btn-${cssId(name)}`);
 
@@ -359,16 +355,14 @@ async function handleGenerate(name) {
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
 
-    // Append AI ack to chat history
-    if (data.ack) {
-      chatHistory[name].push({ role: "assistant", content: data.ack });
+    // Append AI response: ack for chat bubble, fullContent for preview/export
+    if (data.ack || data.content) {
+      chatHistory[name].push({
+        role: "assistant",
+        content: data.ack || "",
+        fullContent: data.content || "",
+      });
       renderChatHistory(name);
-    }
-
-    // Update final result textarea
-    if (data.content) {
-      finalTextarea.value = data.content;
-      finalData[name] = data.content;
     }
 
     statusEl.textContent = "生成完成";
@@ -381,6 +375,8 @@ async function handleGenerate(name) {
     btn.disabled = false;
     btn.textContent = "发送";
   }
+
+  updatePreview();
 }
 
 // ── Render chat history ──────────────────────────────────────────────────────
@@ -425,6 +421,147 @@ function renderClosure(closureTasks) {
   }
 }
 
+// ── Preview Table (Right Panel) ──────────────────────────────────────────────
+
+function renderPreviewTable(config) {
+  const container = document.getElementById("previewTable");
+  container.innerHTML = "";
+  previewFields = [];
+
+  let html = `<table class="w-full bg-white rounded-xl shadow overflow-hidden text-sm">
+    <thead>
+      <tr class="bg-gray-50 text-gray-600">
+        <th class="text-left px-4 py-3 font-semibold w-2/5">Field</th>
+        <th class="text-left px-4 py-3 font-semibold">Content</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  // ── Characterize group ──
+  const userInputs_ = config.user_inputs || [];
+  if (userInputs_.length > 0) {
+    html += `<tr class="bg-blue-50"><td colspan="2" class="px-4 py-2 font-semibold text-blue-700">Characterize</td></tr>`;
+    for (const inp of userInputs_) {
+      const key = `preview-user-${inp.id}`;
+      previewFields.push({ key, label: inp.label, source: "userInputs", sourceKey: inp.id });
+      html += `<tr class="border-t border-gray-100 align-top">
+        <td class="px-4 py-3 text-gray-600">${escapeHtml(inp.label)}</td>
+        <td class="px-4 py-2">
+          <textarea id="${key}" rows="4" data-source="userInputs" data-source-key="${escapeJs(inp.id)}"
+                    oninput="handlePreviewEdit(this)"
+                    class="w-full border border-gray-200 rounded px-2 py-1.5 text-sm resize-y
+                           focus:ring-2 focus:ring-blue-400 focus:border-transparent bg-white"
+                    placeholder="待填写..."></textarea>
+        </td>
+      </tr>`;
+    }
+  }
+
+  // ── AI task groups (grouped by module) ──
+  const llmTasks = config.llm_tasks || [];
+  if (llmTasks.length > 0) {
+    const modules = {};
+    for (const task of llmTasks) {
+      const mod = task.module || "default";
+      if (!modules[mod]) modules[mod] = { label: task.module_label || mod, tasks: [] };
+      modules[mod].tasks.push(task);
+    }
+
+    for (const [modKey, mod] of Object.entries(modules)) {
+      html += `<tr class="bg-purple-50"><td colspan="2" class="px-4 py-2 font-semibold text-purple-700">${escapeHtml(mod.label)}</td></tr>`;
+      for (const task of mod.tasks) {
+        const key = `preview-ai-${cssId(task.target_placeholder)}`;
+        previewFields.push({ key, label: task.target_placeholder, source: "chatHistory", sourceKey: task.target_placeholder });
+        html += `<tr class="border-t border-gray-100 align-top">
+          <td class="px-4 py-3 text-gray-600 font-mono text-xs">${escapeHtml(task.target_placeholder)}</td>
+          <td class="px-4 py-2">
+            <textarea id="${key}" rows="4" data-source="chatHistory" data-source-key="${escapeJs(task.target_placeholder)}"
+                      oninput="handlePreviewEdit(this)"
+                      class="w-full border border-gray-200 rounded px-2 py-1.5 text-sm resize-y
+                             focus:ring-2 focus:ring-purple-400 focus:border-transparent bg-white"
+                      placeholder="待生成..."></textarea>
+          </td>
+        </tr>`;
+      }
+    }
+  }
+
+  // ── Closure group ──
+  const closureTasks = config.closure_tasks || [];
+  if (closureTasks.length > 0) {
+    html += `<tr class="bg-green-50"><td colspan="2" class="px-4 py-2 font-semibold text-green-700">Closure</td></tr>`;
+    for (const task of closureTasks) {
+      const key = `preview-closure-${cssId(task.target_placeholder)}`;
+      previewFields.push({ key, label: task.label || task.target_placeholder, source: "chatHistory", sourceKey: task.target_placeholder });
+      html += `<tr class="border-t border-gray-100 align-top">
+        <td class="px-4 py-3 text-gray-600">${escapeHtml(task.label || task.target_placeholder)}</td>
+        <td class="px-4 py-2">
+          <textarea id="${key}" rows="4" data-source="chatHistory" data-source-key="${escapeJs(task.target_placeholder)}"
+                    oninput="handlePreviewEdit(this)"
+                    class="w-full border border-gray-200 rounded px-2 py-1.5 text-sm resize-y
+                           focus:ring-2 focus:ring-green-400 focus:border-transparent bg-white"
+                    placeholder="待生成..."></textarea>
+        </td>
+      </tr>`;
+    }
+  }
+
+  html += `</tbody></table>`;
+  container.innerHTML = html;
+
+  updatePreview();
+}
+
+function handlePreviewEdit(textarea) {
+  const source = textarea.dataset.source;
+  const sourceKey = textarea.dataset.sourceKey;
+  const value = textarea.value;
+
+  if (source === "userInputs") {
+    // Update userInputs state
+    userInputs[sourceKey] = value;
+    // Sync back to left panel input
+    const leftInput = document.getElementById(`input-${sourceKey}`);
+    if (leftInput) leftInput.value = value;
+  } else if (source === "chatHistory") {
+    // Update or create the last assistant message's fullContent
+    if (!chatHistory[sourceKey]) chatHistory[sourceKey] = [];
+    const history = chatHistory[sourceKey];
+    const lastAIIdx = [...history].reverse().findIndex(m => m.role === "assistant");
+    if (lastAIIdx !== -1) {
+      const realIdx = history.length - 1 - lastAIIdx;
+      history[realIdx].fullContent = value;
+    } else {
+      // No AI message yet, create a synthetic one
+      history.push({ role: "assistant", content: "", fullContent: value });
+    }
+  }
+}
+
+function updatePreview() {
+  for (const field of previewFields) {
+    const el = document.getElementById(field.key);
+    if (!el) continue;
+
+    // Skip if the textarea is currently focused (user is editing)
+    if (document.activeElement === el) continue;
+
+    let value = "";
+
+    if (field.source === "userInputs") {
+      value = (userInputs[field.sourceKey] || "").trim();
+    } else if (field.source === "chatHistory") {
+      const history = chatHistory[field.sourceKey] || [];
+      const lastAI = [...history].reverse().find(m => m.role === "assistant");
+      if (lastAI) {
+        value = (lastAI.fullContent || lastAI.content || "").trim();
+      }
+    }
+
+    el.value = value;
+  }
+}
+
 // ── Export ────────────────────────────────────────────────────────────────────
 
 async function handleExport() {
@@ -436,24 +573,21 @@ async function handleExport() {
     return;
   }
 
-  // Sync all textarea values to finalData
+  // Compute final data from chatHistory (latest AI fullContent for each task)
+  const exportFinal = {};
   for (const task of (currentConfig.llm_tasks || [])) {
-    const textarea = document.getElementById(`final-${cssId(task.target_placeholder)}`);
-    if (textarea) {
-      finalData[task.target_placeholder] = textarea.value;
+    const history = chatHistory[task.target_placeholder] || [];
+    const lastAI = [...history].reverse().find(m => m.role === "assistant");
+    if (lastAI?.fullContent) {
+      exportFinal[task.target_placeholder] = lastAI.fullContent;
     }
   }
   for (const task of (currentConfig.closure_tasks || [])) {
-    const textarea = document.getElementById(`final-${cssId(task.target_placeholder)}`);
-    if (textarea) {
-      finalData[task.target_placeholder] = textarea.value;
+    const history = chatHistory[task.target_placeholder] || [];
+    const lastAI = [...history].reverse().find(m => m.role === "assistant");
+    if (lastAI?.fullContent) {
+      exportFinal[task.target_placeholder] = lastAI.fullContent;
     }
-  }
-
-  // Filter out empty values
-  const exportFinal = {};
-  for (const [k, v] of Object.entries(finalData)) {
-    if (v && v.trim()) exportFinal[k] = v;
   }
 
   status.textContent = "导出中...";
