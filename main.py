@@ -57,6 +57,43 @@ async def get_template_config(template_id: str):
     return cfg
 
 
+@app.get("/api/validate/{template_id}")
+async def validate_template(template_id: str):
+    """Validate YAML placeholder alignment with PPTX placeholders."""
+    cfg = yaml_loader.get(template_id)
+    if not cfg:
+        raise HTTPException(404, f"Template '{template_id}' not found")
+
+    ppt_path = os.path.join(TEMPLATES_DIR, cfg["ppt_file_path"])
+    if not os.path.exists(ppt_path):
+        raise HTTPException(404, "PPTX file not found")
+
+    # Collect all target_placeholders from YAML
+    yaml_ph = set()
+    for dm in cfg.get("direct_mappings", []):
+        yaml_ph.add(dm["target_placeholder"])
+    for t in cfg.get("llm_tasks", []):
+        yaml_ph.add(t["target_placeholder"])
+    for t in cfg.get("closure_tasks", []):
+        yaml_ph.add(t["target_placeholder"])
+
+    # Get actual PPTX placeholders
+    scan = ppt_core.scan_placeholders(ppt_path)
+    pptx_ph = set(scan["unique_placeholders"])
+
+    matched = sorted(yaml_ph & pptx_ph)
+    missing_in_pptx = sorted(yaml_ph - pptx_ph)
+    unused_in_yaml = sorted(pptx_ph - yaml_ph)
+
+    return {
+        "template_id": template_id,
+        "matched": matched,
+        "missing_in_pptx": missing_in_pptx,
+        "unused_in_yaml": unused_in_yaml,
+        "status": "ok" if not missing_in_pptx else "mismatch",
+    }
+
+
 @app.post("/api/generate")
 async def generate(req: GenerateRequest):
     """

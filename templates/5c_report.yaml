@@ -62,6 +62,24 @@ llm_tasks:
       1. 明确临时措施的具体内容
       2. 说明实施时间和责任人
       3. 评估临时措施的有效性
+      4. 内容不要超过100字
+    use_rag: false
+
+  # Cause module - Root Cause
+  - target_placeholder: "Fill in list of root cause"
+    module: "Cause"
+    module_label: "Cause (原因分析)"
+    prompt: |
+      针对以下异常问题：
+      问题描述：{{issue_description}}
+      报告主题：{{issue_title}}
+
+      请分析根本原因（Root Cause）。
+      要求：
+      1. 使用5Why分析法
+      2. 区分直接原因和根本原因
+      3. 提供数据支撑
+      4. 内容不要超过100字
     use_rag: false
 
   # Cause module - Escape Cause
@@ -78,6 +96,7 @@ llm_tasks:
       1. 分析检测环节的缺失
       2. 指出流程中的漏洞
       3. 提供具体原因列表
+      4. 内容不要超过100字
     use_rag: false
 
   # Corrective module - Corrective Actions
@@ -94,6 +113,7 @@ llm_tasks:
       1. 针对根本原因制定永久措施
       2. 明确实施计划和时间节点
       3. 指定责任人
+      4. 内容不要超过100字
     use_rag: false
 
   # Corrective module - Preventive Actions
@@ -110,6 +130,7 @@ llm_tasks:
       1. 系统性预防方案
       2. 流程改进措施
       3. 培训和标准化建议
+      4. 内容不要超过100字
     use_rag: false
 
 # ── Section 4: Closure (user can chat with AI or fill manually) ─────────────
@@ -126,6 +147,7 @@ closure_tasks:
       1. 验证改善措施有效性的方法
       2. 验证时间节点和标准
       3. 需要的数据和证据
+      4. 内容不要超过100字
     use_rag: false
 
   - target_placeholder: "TXT_REVIEW_RESULTS"
@@ -140,4 +162,5 @@ closure_tasks:
       1. 追蹤指标和目标值
       2. 追蹤周期
       3. 效果评估标准
+      4. 内容不要超过100字
     use_rag: false
