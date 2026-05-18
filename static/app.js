@@ -259,10 +259,10 @@ async function handleCharacterizeConfirm() {
   btn.textContent = "生成中...";
   statusEl.className = "text-sm text-blue-500";
 
-  let completed = 0;
-  for (const task of tasks) {
+  statusEl.textContent = `正在并行生成全部 ${tasks.length} 个任务...`;
+
+  const promises = tasks.map(async (task) => {
     const name = task.target_placeholder;
-    statusEl.textContent = `正在生成 (${completed + 1}/${tasks.length}): ${task.module}`;
 
     const statusTaskEl = document.getElementById(`status-${cssId(name)}`);
     if (statusTaskEl) {
@@ -285,7 +285,6 @@ async function handleCharacterizeConfirm() {
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
 
-      // Store both ack (for chat bubble) and fullContent (for preview/export)
       if (!chatHistory[name]) chatHistory[name] = [];
       chatHistory[name].push({
         role: "assistant",
@@ -298,20 +297,26 @@ async function handleCharacterizeConfirm() {
         statusTaskEl.textContent = "生成完成";
         statusTaskEl.className = "mt-2 text-xs text-green-600";
       }
+      return { status: "ok", name };
     } catch (e) {
       if (statusTaskEl) {
         statusTaskEl.textContent = "生成失败: " + e.message;
         statusTaskEl.className = "mt-2 text-xs text-red-500";
       }
+      return { status: "error", name, error: e };
     }
+  });
 
-    completed++;
-  }
+  const results = await Promise.allSettled(promises);
+  const succeeded = results.filter(r => r.status === "fulfilled" && r.value.status === "ok").length;
+  const failed = tasks.length - succeeded;
 
   btn.disabled = false;
   btn.textContent = "确认并生成";
-  statusEl.textContent = `全部完成 (${completed}/${tasks.length})`;
-  statusEl.className = "text-sm text-green-600";
+  statusEl.textContent = failed > 0
+    ? `完成：${succeeded} 成功，${failed} 失败`
+    : `全部完成 (${succeeded}/${tasks.length})`;
+  statusEl.className = failed > 0 ? "text-sm text-yellow-600" : "text-sm text-green-600";
 
   updatePreview();
 }
@@ -436,26 +441,6 @@ function renderPreviewTable(config) {
       </tr>
     </thead>
     <tbody>`;
-
-  // ── Characterize group ──
-  const userInputs_ = config.user_inputs || [];
-  if (userInputs_.length > 0) {
-    html += `<tr class="bg-blue-50"><td colspan="2" class="px-4 py-2 font-semibold text-blue-700">Characterize</td></tr>`;
-    for (const inp of userInputs_) {
-      const key = `preview-user-${inp.id}`;
-      previewFields.push({ key, label: inp.label, source: "userInputs", sourceKey: inp.id });
-      html += `<tr class="border-t border-gray-100 align-top">
-        <td class="px-4 py-3 text-gray-600">${escapeHtml(inp.label)}</td>
-        <td class="px-4 py-2">
-          <textarea id="${key}" rows="8" data-source="userInputs" data-source-key="${escapeJs(inp.id)}"
-                    oninput="handlePreviewEdit(this)"
-                    class="w-full border border-gray-200 rounded px-2 py-1.5 text-sm resize-y
-                           focus:ring-2 focus:ring-blue-400 focus:border-transparent bg-white"
-                    placeholder="待填写..."></textarea>
-        </td>
-      </tr>`;
-    }
-  }
 
   // ── AI task groups (grouped by module) ──
   const llmTasks = config.llm_tasks || [];

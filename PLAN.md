@@ -77,3 +77,47 @@
 4. 选择任意模板，确认下方显示该模板的占位符列表
 5. 为某个占位符输入提示词，点击"生成"，确认返回结果填入 textarea
 6. 手动修改 textarea 内容，点击"导出"，确认下载的 PPTX 只包含选中的那一页且占位符已替换
+
+
+测试
+
+  前置条件
+
+  确认 .env 里有 Dify 配置：
+  DIFY_API_KEY=你的key
+  DIFY_BASE_URL=你的dify地址
+
+  启动测试
+
+  cd /mnt/e/workspace/ppt_AI_automation
+  python -m test.test_generate
+
+  不需要启动 python main.py，脚本直接调 core 层函数。
+
+  执行流程
+
+  读 test_data.json (3个测试案例)
+      ↓
+  读 5c_report.yaml (拿到 5+2=7 个 task 的 prompt 模板)
+      ↓
+  对每个案例 × 每个 task：
+      build_prompt() → 渲染 Jinja2 模板
+      ↓
+      generate_content() → 调 Dify API
+      ↓
+      打印 ack + content + 耗时
+      ↓
+  结果写入 test/test_results.json
+
+  输出
+
+  - 终端实时打印每个 task 的生成结果和耗时
+  - 最后输出汇总表（OK/FAIL 状态）
+  - 完整结果保存到 test/test_results.json
+
+  调整算法的流程
+
+  1. 跑一次，看 test_results.json 里哪些 task 内容不理想
+  2. 改 templates/5c_report.yaml 里对应 task 的 prompt 字段
+  3. 重新跑，对比前后结果
+  4. 重复直到满意

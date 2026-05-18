@@ -1,0 +1,158 @@
+template_id: "standard_report_v1"
+template_name: "Standard Report"
+description: "標準報告模板，包含Meta Data、問題描述、問題分析、根本原因、圍堵措施、改善對策"
+ppt_file_path: "Standard_report.pptx"
+slide_index: 1
+
+# ── Section 1: User inputs (Characterize phase) ──────────────────────────────
+user_inputs:
+  - id: "file_name"
+    label: "檔案名"
+    placeholder: "请输入档案名称"
+    type: "text"
+    required: true
+
+  - id: "ipad_model"
+    label: "iPad機型"
+    placeholder: "如 Air、Pro"
+    type: "text"
+    required: true
+
+  - id: "build"
+    label: "Build"
+    placeholder: "如 MP、EVT、DVT"
+    type: "text"
+    required: true
+
+  - id: "ipad_type"
+    label: "iPad機種"
+    placeholder: "如 J70x、J51x"
+    type: "text"
+    required: true
+
+  - id: "process"
+    label: "製程"
+    placeholder: "如 組裝（Assy）、SMT"
+    type: "text"
+    required: true
+
+  - id: "reporter"
+    label: "報告人"
+    placeholder: "请输入报告人姓名"
+    type: "text"
+
+  - id: "keywords"
+    label: "關鍵字"
+    placeholder: "请输入关键字"
+    type: "text"
+
+  - id: "issue_description"
+    label: "問題描述"
+    placeholder: "请详细描述问题现象、发现时间、影响范围等"
+    type: "textarea"
+    required: true
+
+# ── Section 2: Direct mappings (user input -> PPT placeholder, no AI) ───────
+direct_mappings:
+  - user_input_id: "file_name"
+    target_placeholder: "FILE_NAME"
+  - user_input_id: "ipad_model"
+    target_placeholder: "IPAD_MODEL"
+  - user_input_id: "build"
+    target_placeholder: "BUILD"
+  - user_input_id: "ipad_type"
+    target_placeholder: "IPAD_TYPE"
+  - user_input_id: "process"
+    target_placeholder: "PROCESS"
+  - user_input_id: "reporter"
+    target_placeholder: "REPORTER"
+  - user_input_id: "keywords"
+    target_placeholder: "KEYWORDS"
+  - user_input_id: "issue_description"
+    target_placeholder: "ISSUE_DESCRIPTION"
+  - user_input_id: "file_name"
+    target_placeholder: "REPORT_TITLE"
+  - user_input_id: "file_name"
+    target_placeholder: "REPORT_SUBTITLE"
+
+# ── Section 3: AI generation tasks ──────────────────────────────────────────
+llm_tasks:
+  - target_placeholder: "ISSUE_ANALYSIS"
+    module: "問題分析"
+    module_label: "問題分析"
+    prompt: |
+      针对以下问题：
+      档案名：{{file_name}}
+      iPad机型：{{ipad_model}}
+      Build：{{build}}
+      iPad机种：{{ipad_type}}
+      制程：{{process}}
+      问题描述：{{issue_description}}
+
+      请进行问题分析。
+      要求：
+      1. 分析问题的现象和影响范围
+      2. 识别关键特征和规律
+      3. 使用数据支撑分析
+      4. 内容不要超过150字
+    use_rag: false
+
+  - target_placeholder: "ROOT_CAUSE"
+    module: "根本原因"
+    module_label: "根本原因"
+    prompt: |
+      针对以下问题：
+      档案名：{{file_name}}
+      iPad机型：{{ipad_model}}
+      Build：{{build}}
+      iPad机种：{{ipad_type}}
+      制程：{{process}}
+      问题描述：{{issue_description}}
+
+      请分析根本原因。
+      要求：
+      1. 使用5Why分析法
+      2. 区分直接原因和根本原因
+      3. 提供数据支撑
+      4. 内容不要超过150字
+    use_rag: false
+
+  - target_placeholder: "CONTAINMENT"
+    module: "圍堵措施"
+    module_label: "圍堵措施"
+    prompt: |
+      针对以下问题：
+      档案名：{{file_name}}
+      iPad机型：{{ipad_model}}
+      Build：{{build}}
+      iPad机种：{{ipad_type}}
+      制程：{{process}}
+      问题描述：{{issue_description}}
+
+      请给出围堵措施。
+      要求：
+      1. 明确临时措施的具体内容
+      2. 说明实施时间和责任人
+      3. 评估临时措施的有效性
+      4. 内容不要超过150字
+    use_rag: false
+
+  - target_placeholder: "CORRECTIVE"
+    module: "改善對策"
+    module_label: "改善對策"
+    prompt: |
+      针对以下问题：
+      档案名：{{file_name}}
+      iPad机型：{{ipad_model}}
+      Build：{{build}}
+      iPad机种：{{ipad_type}}
+      制程：{{process}}
+      问题描述：{{issue_description}}
+
+      请给出改善对策。
+      要求：
+      1. 针对根本原因制定永久措施
+      2. 明确实施计划和时间节点
+      3. 指定责任人
+      4. 内容不要超过150字
+    use_rag: false
