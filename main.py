@@ -134,11 +134,27 @@ async def generate(req: GenerateRequest):
     if rag_context:
         system_prompt += f"\n\n参考知识库内容：\n{rag_context}"
 
+    # 首次生成问题分析/根本原因时，注入推测免责声明
     history = [h.model_dump() for h in req.history]
+    first_turn_placeholders = {"ISSUE_ANALYSIS", "ROOT_CAUSE"}
+    is_first_turn = not history and req.placeholder_key in first_turn_placeholders
+    if is_first_turn:
+        rendered_prompt = (
+            "【提示】该内容为基于过往案例经验的推测，仅供参考，"
+            "建议用户结合实际情况进行修正或补充更多细节以获得更精准的分析。\n\n"
+            + rendered_prompt
+        )
+
     result = await generate_content(
         req.placeholder_key, rendered_prompt, history,
         system_prompt=system_prompt,
     )
+
+    # 首次生成时，强制在 ack 中附加免责声明
+    if is_first_turn:
+        disclaimer = "以上为基于过往经验的推测性分析，仅供参考。如您有更多现场细节，随时告诉我，我可以进一步完善。"
+        result["ack"] = disclaimer
+
     return result
 
 
