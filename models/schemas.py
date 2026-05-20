@@ -48,6 +48,10 @@ class GenerateRequest(BaseModel):
         default_factory=dict,
         description="Values from Characterize section for Jinja2 substitution",
     )
+    context: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Upstream placeholder results for downstream prompt injection",
+    )
 
 
 class GenerateResponse(BaseModel):

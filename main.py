@@ -120,8 +120,12 @@ async def generate(req: GenerateRequest):
     if not task:
         raise HTTPException(400, f"No LLM task defined for placeholder '{req.placeholder_key}'")
 
-    # Build prompt with Jinja2 substitution from user_inputs
-    rendered_prompt = build_prompt(task["prompt"], req.user_inputs or {})
+    # Build prompt with Jinja2 substitution from user_inputs + upstream context
+    render_inputs = dict(req.user_inputs or {})
+    for k, v in (req.context or {}).items():
+        if v and v.strip():
+            render_inputs[f"context_{k}"] = v
+    rendered_prompt = build_prompt(task["prompt"], render_inputs)
 
     # RAG context (stubbed — returns empty string, no impact when disabled)
     rag_context = ""

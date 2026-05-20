@@ -193,6 +193,9 @@ llm_tasks:
       2. 区分直接原因和根本原因
       3. 提供数据支撑
       4. 内容不要超过150字
+
+      【问题分析结果】
+      {{context_ISSUE_ANALYSIS}}
     use_rag: false
 
   - target_placeholder: "CONTAINMENT"
@@ -213,6 +216,11 @@ llm_tasks:
       2. 说明实施时间和责任人
       3. 评估临时措施的有效性
       4. 内容不要超过150字
+
+      【问题分析结果】
+      {{context_ISSUE_ANALYSIS}}
+      【根本原因结果】
+      {{context_ROOT_CAUSE}}
     use_rag: false
 
   - target_placeholder: "CORRECTIVE"
@@ -233,4 +241,11 @@ llm_tasks:
       2. 明确实施计划和时间节点
       3. 指定责任人
       4. 内容不要超过150字
+
+      【问题分析结果】
+      {{context_ISSUE_ANALYSIS}}
+      【根本原因结果】
+      {{context_ROOT_CAUSE}}
+      【围堵措施结果】
+      {{context_CONTAINMENT}}
     use_rag: false

@@ -23,11 +23,10 @@ def build_prompt(prompt_template: str, user_inputs: dict) -> str:
     try:
         return template.render(**user_inputs)
     except UndefinedError:
-        # Fill missing variables with placeholder text
+        # Fill missing variables: context_* → empty string, others → "[未提供]"
         safe_inputs = dict(user_inputs)
-        # Extract all variable names from the template source
         import re
         for var in re.findall(r"\{\{(\w+)\}\}", prompt_template):
             if var not in safe_inputs:
-                safe_inputs[var] = "[未提供]"
+                safe_inputs[var] = "" if var.startswith("context_") else "[未提供]"
         return Template(prompt_template).render(**safe_inputs)

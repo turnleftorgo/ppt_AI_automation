@@ -9,6 +9,33 @@ let generatingSet = new Set();
 // source: 'userInputs' | 'chatHistory'
 let previewFields = [];
 
+// ── Dependency graph for serial generation ────────────────────────────────────
+const generationOrder = ["ISSUE_ANALYSIS", "ROOT_CAUSE", "CONTAINMENT", "CORRECTIVE"];
+
+const dependencies = {
+  ISSUE_ANALYSIS: [],
+  ROOT_CAUSE: ["ISSUE_ANALYSIS"],
+  CONTAINMENT: ["ISSUE_ANALYSIS", "ROOT_CAUSE"],
+  CORRECTIVE: ["ISSUE_ANALYSIS", "ROOT_CAUSE", "CONTAINMENT"],
+};
+
+const downstream = {
+  ISSUE_ANALYSIS: ["ROOT_CAUSE", "CONTAINMENT", "CORRECTIVE"],
+  ROOT_CAUSE: ["CONTAINMENT", "CORRECTIVE"],
+  CONTAINMENT: ["CORRECTIVE"],
+  CORRECTIVE: [],
+};
+
+function collectContext(placeholderKey) {
+  const ctx = {};
+  for (const dep of (dependencies[placeholderKey] || [])) {
+    const history = chatHistory[dep] || [];
+    const lastAI = [...history].reverse().find(m => m.role === "assistant");
+    ctx[dep] = lastAI ? (lastAI.fullContent || lastAI.content || "") : "";
+  }
+  return ctx;
+}
+
 // ── Init: Load templates on page load ────────────────────────────────────────
 
 async function init() {
@@ -259,16 +286,27 @@ async function handleCharacterizeConfirm() {
   btn.textContent = "生成中...";
   statusEl.className = "text-sm text-blue-500";
 
-  statusEl.textContent = `正在并行生成全部 ${tasks.length} 个任务...`;
+  // Serial generation in dependency order
+  const taskMap = {};
+  for (const t of tasks) taskMap[t.target_placeholder] = t;
 
-  const promises = tasks.map(async (task) => {
-    const name = task.target_placeholder;
+  let succeeded = 0;
+  let failed = 0;
+
+  for (let i = 0; i < generationOrder.length; i++) {
+    const name = generationOrder[i];
+    const task = taskMap[name];
+    if (!task) continue;  // skip if not in this template's llm_tasks
+
+    statusEl.textContent = `正在生成 (${i + 1}/${generationOrder.length})：${task.module_label || name}...`;
 
     const statusTaskEl = document.getElementById(`status-${cssId(name)}`);
     if (statusTaskEl) {
       statusTaskEl.textContent = "正在生成...";
       statusTaskEl.className = "mt-2 text-xs text-blue-500";
     }
+
+    const context = collectContext(name);
 
     try {
       const res = await fetch("/api/generate", {
@@ -280,6 +318,7 @@ async function handleCharacterizeConfirm() {
           message: "请根据上述信息自动生成内容",
           history: [],
           user_inputs: userInputs,
+          context,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -292,33 +331,29 @@ async function handleCharacterizeConfirm() {
         fullContent: data.content || "",
       });
       renderChatHistory(name);
+      updatePreview();
 
       if (statusTaskEl) {
         statusTaskEl.textContent = "生成完成";
         statusTaskEl.className = "mt-2 text-xs text-green-600";
       }
-      return { status: "ok", name };
+      succeeded++;
     } catch (e) {
       if (statusTaskEl) {
         statusTaskEl.textContent = "生成失败: " + e.message;
         statusTaskEl.className = "mt-2 text-xs text-red-500";
       }
-      return { status: "error", name, error: e };
+      failed++;
+      // fallback: upstream failed, continue to next task (context will be empty)
     }
-  });
-
-  const results = await Promise.allSettled(promises);
-  const succeeded = results.filter(r => r.status === "fulfilled" && r.value.status === "ok").length;
-  const failed = tasks.length - succeeded;
+  }
 
   btn.disabled = false;
   btn.textContent = "确认并生成";
   statusEl.textContent = failed > 0
     ? `完成：${succeeded} 成功，${failed} 失败`
-    : `全部完成 (${succeeded}/${tasks.length})`;
+    : `全部完成 (${succeeded}/${generationOrder.length})`;
   statusEl.className = failed > 0 ? "text-sm text-yellow-600" : "text-sm text-green-600";
-
-  updatePreview();
 }
 
 // ── Generate: multi-turn conversation ─────────────────────────────────────────
@@ -346,6 +381,7 @@ async function handleGenerate(name) {
   statusEl.className = "mt-2 text-xs text-blue-500";
 
   try {
+    const context = collectContext(name);
     const res = await fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -355,6 +391,7 @@ async function handleGenerate(name) {
         message,
         history: chatHistory[name],
         user_inputs: userInputs,
+        context,
       }),
     });
     if (!res.ok) throw new Error(await res.text());
@@ -372,6 +409,52 @@ async function handleGenerate(name) {
 
     statusEl.textContent = "生成完成";
     statusEl.className = "mt-2 text-xs text-green-600";
+
+    // Cascade: regenerate downstream tasks
+    for (const downstreamKey of (downstream[name] || [])) {
+      const dsStatusEl = document.getElementById(`status-${cssId(downstreamKey)}`);
+      if (dsStatusEl) {
+        dsStatusEl.textContent = "上游更新，正在重新生成...";
+        dsStatusEl.className = "mt-2 text-xs text-blue-500";
+      }
+
+      const ctx = collectContext(downstreamKey);
+      try {
+        const dsRes = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            template_id: currentConfig.template_id,
+            placeholder_key: downstreamKey,
+            message: "上游内容已更新，请重新生成",
+            history: [],
+            user_inputs: userInputs,
+            context: ctx,
+          }),
+        });
+        if (!dsRes.ok) throw new Error(await dsRes.text());
+        const dsData = await dsRes.json();
+
+        if (!chatHistory[downstreamKey]) chatHistory[downstreamKey] = [];
+        chatHistory[downstreamKey].push({
+          role: "assistant",
+          content: dsData.ack || "",
+          fullContent: dsData.content || "",
+        });
+        renderChatHistory(downstreamKey);
+        updatePreview();
+
+        if (dsStatusEl) {
+          dsStatusEl.textContent = "级联更新完成";
+          dsStatusEl.className = "mt-2 text-xs text-green-600";
+        }
+      } catch (e) {
+        if (dsStatusEl) {
+          dsStatusEl.textContent = "级联更新失败: " + e.message;
+          dsStatusEl.className = "mt-2 text-xs text-red-500";
+        }
+      }
+    }
   } catch (e) {
     statusEl.textContent = "生成失败: " + e.message;
     statusEl.className = "mt-2 text-xs text-red-500";
