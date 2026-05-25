@@ -4,6 +4,9 @@ FastAPI entry point for the YAML-driven template-based PPTX generation system.
 import os
 from io import BytesIO
 
+# 告诉 Python，访问这个局域网 IP 时不要走代理
+os.environ['NO_PROXY'] = '192.168.50.181'
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -122,6 +125,13 @@ async def generate(req: GenerateRequest):
 
     # Build prompt with Jinja2 substitution from user_inputs + upstream context
     render_inputs = dict(req.user_inputs or {})
+
+    # Group metadata fields into a single dict
+    user_inputs_cfg = cfg.get("user_inputs", [])
+    metadata_ids = [u["id"] for u in user_inputs_cfg if u.get("group") == "metadata"]
+    metadata = {k: v for k, v in render_inputs.items() if k in metadata_ids}
+    render_inputs["metadata"] = metadata
+
     for k, v in (req.context or {}).items():
         if v and v.strip():
             render_inputs[f"context_{k}"] = v
@@ -132,9 +142,8 @@ async def generate(req: GenerateRequest):
     if task.get("use_rag"):
         rag_context = await get_rag_context(task.get("rag_tag", ""), rendered_prompt)
 
-    # Build system prompt (task-specific or default)
-    from core.llm_engine import DEFAULT_SYSTEM_PROMPT
-    system_prompt = task.get("system_prompt") or DEFAULT_SYSTEM_PROMPT
+    # Build system prompt (task-specific or YAML-level)
+    system_prompt = task.get("system_prompt") or cfg.get("system_prompt", "")
     if rag_context:
         system_prompt += f"\n\n参考知识库内容：\n{rag_context}"
 
@@ -202,4 +211,4 @@ async def export_pptx(req: ExportRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8001)

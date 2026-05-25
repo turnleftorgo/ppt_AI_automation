@@ -12,21 +12,6 @@ import requests
 DIFY_API_KEY = os.getenv("DIFY_API_KEY", "")
 DIFY_BASE_URL = os.getenv("DIFY_BASE_URL", "").rstrip("/")
 
-DEFAULT_SYSTEM_PROMPT = """你是一个专业的 PPT 品質改善報告内容生成助手。
-
-用户正在填写一个 PPT 模板中的占位符。你需要：
-1. 根据用户的描述生成或修改该占位符的内容
-2. 语言简洁有力，适合 PPT 演示文稿
-3. 内容专业、结构清晰
-
-每次回复你必须且只能返回一个严格的 JSON 对象，包含两个字段：
-- "ack": 简短回应（不超过 50 字），确认你理解了用户的意思
-- "content": 更新后的占位符最终文本内容
-
-示例：
-{"ack": "好的，已更新根本原因分析，加入了材料批次问题。", "content": "经分析，根本原因为10月批次原材料硬度不达标导致外壳变形。"}
-
-不要输出任何其他内容、解释或 markdown 标记。"""
 
 # ── Conversation ID cache (per placeholder, for multi-turn) ──────────────────
 _conversation_ids: dict[str, str] = {}
@@ -121,7 +106,7 @@ async def generate_content(
         return _stub_generate(placeholder_key, message)
 
     # Build query: system prompt context + user message
-    effective_system = system_prompt or DEFAULT_SYSTEM_PROMPT
+    effective_system = system_prompt or ""
     query = f"{effective_system}\n\n---\n\n[当前占位符：{placeholder_key}]\n\n{message}"
 
     try:
