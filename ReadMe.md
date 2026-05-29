@@ -33,8 +33,9 @@
   输出、加新模板都很简单），是一个完成度较高的项目。
 
  
- 1.1 从
+ 1.1 从YAML配置到用户能看见和操作的网页界面
  
+ app.js
  
  renderCharacterize(currentConfig.user_inputs || []);
   renderAIModules(currentConfig.llm_tasks || []);
@@ -49,11 +50,9 @@
   renderClosure()（app.js:408）— 遍历 closure_tasks 数组，对每个 task 也调 renderAITask()
   生成聊天对话框。
 
-  --------------------------------------------
+  
 
-数据流
-
-前端用户输入最终也是 JSON，和测试数据结构一样。整个链路是这样的：
+1.2 数据流
 
   用户在前端做了什么
 
@@ -134,76 +133,9 @@
 
   没有"分解"这一步 — 分解是 YAML 模板提前定义好的，后端只是按配置逐个执行。
 
-----------------------------------------------
-
-更改输出格式
-
-整个架构的输出格式只在一个地方耦合：
-
-  和输出格式相关的只有一层
-
-  YAML 配置 + 用户输入 → prompt 构建 → Dify API → {placeholder: content} → 填入模板
-                                                          ↑
-                                                    这一步之前完全通用
-
-  content_map 就是个 dict[str, str]，跟 PPT 没有任何关系。生成 PPT 的逻辑全部封装在
-  core/ppt_core.py 的 export_single_slide() 里。
-
-  改成 Docs 要动什么
-
-  加一个 core/docs_core.py — 实现 export_single_doc(template_path, content_map) ->
-  bytes，把占位符填入 .docx 模板（用 python-docx 库）
-  YAML 加一个字段 — 比如 output_format: "docx"，区分用哪个导出器
-  /api/export 路由 — 根据 output_format 调 ppt_core 或 docs_core
-  模板文件 — 提供 .docx 模板代替 .pptx
-
-  AI 生成部分、用户输入收集、prompt 构建、对话管理 — 一行都不用改。
-
-  本质上这个程序是个"AI 内容生成 + 模板填充"的框架，PPT 只是当前选的填充目标而已。
 
 
-  ---------------------------------------------------------------
-
-  测试生成内容
-
-    指标: context_recall
-  RAGAS 函数: ragas.metrics.context_recall
-  评什么: 检索质量
-  怎么评: 把 ground_truth 拆成多条 claim，检查 Dify 检索命中的 contexts 覆盖了多少条 claim
-  ────────────────────────────────────────
-  指标: answer_correctness
-  RAGAS 函数: ragas.metrics.answer_correctness
-  评什么: 生成质量
-  怎么评: 把 AI 生成的 answer 和 ground_truth 做语义相似度 + 事实一致性对比
-
-  ----------------------------------------------------------------
-
-  ground_truth_reports.json 在流程里扮演两个完全独立的角色：
-
-  ground_truth_reports.json
-          │
-          ├── metadata + problem_description ──→ 构建 prompt ──→ Dify API
-          │                                                          │
-          │                                                          ▼
-          │                                                     Dify 生成的内容
-          │                                                          │
-          └── sections（root_cause, containment...）                  │
-                      │                                              │
-                      │         ┌────────────────────────────────────┘
-                      ▼         ▼
-                  RAGAS 对比：Dify 生成 vs 人工标准答案
-
-  Dify 只收到 metadata + problem_description，不会看到 sections。
-
-  举例：
-  - Dify 的输入："问题标题：J70x HSG RC 內腔結構過銑", "製程：金加（CNC）",
-  "问题描述：08/19..."
-  - Dify 的输出：AI 生成的根本原因、围堵措施等
-  - Ground Truth：人工写的 "CNC機台T3開粗刀把夾屑..."（只用来对比打分，不发给 Dify）
-
-  ----------------------------------------------------------------
-
-  Prompt 拼接架构图
+1.3 Context Engineering架构图
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -312,7 +244,8 @@
     产出一道完整的菜（发给 LLM 的 prompt）。
 
 
-    -----------------------------------------
+1.4 Dependency explanation
+
 
     │   依赖    │   对应环节    │                  具体作用                   │
   ├───────────┼───────────────┼─────────────────────────────────────────────┤
@@ -343,6 +276,78 @@
   ├───────────┼───────────────┼─────────────────────────────────────────────┤
   │ python-mu │ 人工修改兜底  │ FastAPI 处理文件上传（如果前端需要上传 PPTX │
   │ ltipart   │               │  模板）
+
+
+
+
+2.0更改输出格式
+
+整个架构的输出格式只在一个地方耦合：
+
+  和输出格式相关的只有一层
+
+  YAML 配置 + 用户输入 → prompt 构建 → Dify API → {placeholder: content} → 填入模板
+                                                          ↑
+                                                    这一步之前完全通用
+
+  content_map 就是个 dict[str, str]，跟 PPT 没有任何关系。生成 PPT 的逻辑全部封装在
+  core/ppt_core.py 的 export_single_slide() 里。
+
+  改成 Docs 要动什么
+
+  加一个 core/docs_core.py — 实现 export_single_doc(template_path, content_map) ->
+  bytes，把占位符填入 .docx 模板（用 python-docx 库）
+  YAML 加一个字段 — 比如 output_format: "docx"，区分用哪个导出器
+  /api/export 路由 — 根据 output_format 调 ppt_core 或 docs_core
+  模板文件 — 提供 .docx 模板代替 .pptx
+
+  AI 生成部分、用户输入收集、prompt 构建、对话管理 — 一行都不用改。
+
+  本质上这个程序是个"AI 内容生成 + 模板填充"的框架，PPT 只是当前选的填充目标而已。
+
+
+
+
+
+2.1 测试生成内容
+
+    指标: context_recall
+  RAGAS 函数: ragas.metrics.context_recall
+  评什么: 检索质量
+  怎么评: 把 ground_truth 拆成多条 claim，检查 Dify 检索命中的 contexts 覆盖了多少条 claim
+  ────────────────────────────────────────
+  指标: answer_correctness
+  RAGAS 函数: ragas.metrics.answer_correctness
+  评什么: 生成质量
+  怎么评: 把 AI 生成的 answer 和 ground_truth 做语义相似度 + 事实一致性对比
+
+  ----------------------------------------------------------------
+
+  ground_truth_reports.json 在流程里扮演两个完全独立的角色：
+
+  ground_truth_reports.json
+          │
+          ├── metadata + problem_description ──→ 构建 prompt ──→ Dify API
+          │                                                          │
+          │                                                          ▼
+          │                                                     Dify 生成的内容
+          │                                                          │
+          └── sections（root_cause, containment...）                  │
+                      │                                              │
+                      │         ┌────────────────────────────────────┘
+                      ▼         ▼
+                  RAGAS 对比：Dify 生成 vs 人工标准答案
+
+  Dify 只收到 metadata + problem_description，不会看到 sections。
+
+  举例：
+  - Dify 的输入："问题标题：J70x HSG RC 內腔結構過銑", "製程：金加（CNC）",
+  "问题描述：08/19..."
+  - Dify 的输出：AI 生成的根本原因、围堵措施等
+  - Ground Truth：人工写的 "CNC機台T3開粗刀把夾屑..."（只用来对比打分，不发给 Dify）
+
+  
+
 
   
   
