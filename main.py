@@ -4,9 +4,6 @@ FastAPI entry point for the YAML-driven template-based PPTX generation system.
 import os
 from io import BytesIO
 
-# 告诉 Python，访问这个局域网 IP 时不要走代理
-os.environ['NO_PROXY'] = '192.168.50.181'
-
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -211,4 +208,4 @@ async def export_pptx(req: ExportRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=8001)

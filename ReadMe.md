@@ -1,4 +1,39 @@
- 模块化设计
+1.0项目概览                                                                      
+                                                                                
+  技术栈： FastAPI + Jinja2 + lxml + Dify API + Tailwind CSS                    
+                                                                                
+  核心流程：                                                                    
+  1. 用户选择 YAML 配置的模板                                                   
+  2. 填写 Characterize 表单（元数据）                                           
+  3. 系统按依赖顺序调用 LLM 生成各个占位符内容
+  4. 用户可以编辑/对话调整 AI 生成的内容                                        
+  5. 导出填充好占位符的 PPTX 文件                                               
+                                                                                
+  优点                                                                          
+                                                                                
+  1. 模块化架构清晰 — core/ 分离了 PPT 引擎、LLM 调用、YAML 加载、prompt        
+  构建，职责分明                                                                
+  2. YAML 驱动 — 新增模板只需写 YAML + PPTX，不需要改代码                       
+  3. 智能文本分配 — _intelligent_distribute() 保留了原始格式（字体、颜色等）    
+  4. 依赖图设计 — 前端 dependencies 确保 ISSUE_ANALYSIS → ROOT_CAUSE →          
+  CONTAINMENT → CORRECTIVE 按序生成                                             
+  5. RAG 预留 — rag_stub.py 已经为未来知识库检索做好了接口                      
+                                                                                
+  可以改进的地方  
+                                                                                
+  1. 会话管理 — _conversation_ids 用全局 dict 存，多用户会冲突                  
+  2. 错误处理 — Dify API 调用失败时返回的错误信息可以更结构化
+  3. 类型提示 — 部分函数缺少返回类型注解                                        
+  4. 测试覆盖 — test/ 目录有测试脚本，但没有用 pytest 框架                      
+                                                                                
+  总结                                                                          
+                                                                                
+  这是一个很实用的工具，特别适合制造业的 FACA                                   
+  报告生成场景。架构上已经考虑了扩展性（加 docx
+  输出、加新模板都很简单），是一个完成度较高的项目。
+
+ 
+ 1.1 从
  
  
  renderCharacterize(currentConfig.user_inputs || []);
@@ -14,36 +49,9 @@
   renderClosure()（app.js:408）— 遍历 closure_tasks 数组，对每个 task 也调 renderAITask()
   生成聊天对话框。
 
-----------------------------------------------
-
-如果希望生成docx文档
-
-整个架构的输出格式只在一个地方耦合：
-
-  和输出格式相关的只有一层
-
-  YAML 配置 + 用户输入 → prompt 构建 → Dify API → {placeholder: content} → 填入模板
-                                                          ↑
-                                                    这一步之前完全通用
-
-  content_map 就是个 dict[str, str]，跟 PPT 没有任何关系。生成 PPT 的逻辑全部封装在
-  core/ppt_core.py 的 export_single_slide() 里。
-
-  改成 Docs 要动什么
-
-  加一个 core/docs_core.py — 实现 export_single_doc(template_path, content_map) ->
-  bytes，把占位符填入 .docx 模板（用 python-docx 库）
-  YAML 加一个字段 — 比如 output_format: "docx"，区分用哪个导出器
-  /api/export 路由 — 根据 output_format 调 ppt_core 或 docs_core
-  模板文件 — 提供 .docx 模板代替 .pptx
-
-  AI 生成部分、用户输入收集、prompt 构建、对话管理 — 一行都不用改。
-
-  本质上这个程序是个"AI 内容生成 + 模板填充"的框架，PPT 只是当前选的填充目标而已。
-
   --------------------------------------------
 
-  数据流
+数据流
 
 前端用户输入最终也是 JSON，和测试数据结构一样。整个链路是这样的：
 
@@ -125,6 +133,33 @@
   └──────────────┴──────────────────┴─────────────────────────────┴───────────────────────┘
 
   没有"分解"这一步 — 分解是 YAML 模板提前定义好的，后端只是按配置逐个执行。
+
+----------------------------------------------
+
+更改输出格式
+
+整个架构的输出格式只在一个地方耦合：
+
+  和输出格式相关的只有一层
+
+  YAML 配置 + 用户输入 → prompt 构建 → Dify API → {placeholder: content} → 填入模板
+                                                          ↑
+                                                    这一步之前完全通用
+
+  content_map 就是个 dict[str, str]，跟 PPT 没有任何关系。生成 PPT 的逻辑全部封装在
+  core/ppt_core.py 的 export_single_slide() 里。
+
+  改成 Docs 要动什么
+
+  加一个 core/docs_core.py — 实现 export_single_doc(template_path, content_map) ->
+  bytes，把占位符填入 .docx 模板（用 python-docx 库）
+  YAML 加一个字段 — 比如 output_format: "docx"，区分用哪个导出器
+  /api/export 路由 — 根据 output_format 调 ppt_core 或 docs_core
+  模板文件 — 提供 .docx 模板代替 .pptx
+
+  AI 生成部分、用户输入收集、prompt 构建、对话管理 — 一行都不用改。
+
+  本质上这个程序是个"AI 内容生成 + 模板填充"的框架，PPT 只是当前选的填充目标而已。
 
 
   ---------------------------------------------------------------
@@ -275,3 +310,40 @@
     effective_system = system_prompt or ""
     query = f"{effective_system}\n\n---\n\n[当前占位符：{placeholder_key}]\n\n{message}"
     产出一道完整的菜（发给 LLM 的 prompt）。
+
+
+    -----------------------------------------
+
+    │   依赖    │   对应环节    │                  具体作用                   │
+  ├───────────┼───────────────┼─────────────────────────────────────────────┤
+  │           │               │ Web 框架，提供                              │
+  │ fastapi   │ 全程          │ /api/templates、/api/generate、/api/export  │
+  │           │               │ 等接口                                      │
+  ├───────────┼───────────────┼─────────────────────────────────────────────┤
+  │ uvicorn   │ 全程          │ ASGI 服务器，跑 FastAPI 用的                │
+  ├───────────┼───────────────┼─────────────────────────────────────────────┤
+  │ pydantic  │ 按模板显示占  │ 定义 GenerateRequest、ExportRequest         │
+  │           │ 位符          │ 等数据模型，校验前端传来的参数              │
+  ├───────────┼───────────────┼─────────────────────────────────────────────┤
+  │ pyyaml    │ 内置模板下拉  │ 加载 standard_report.yaml，解析模板配置（us │
+  │           │ 选择          │ er_inputs、llm_tasks、direct_mappings）     │
+  ├───────────┼───────────────┼─────────────────────────────────────────────┤
+  │           │ 每个占位符独  │ 把 YAML 里的                                │
+  │ jinja2    │ 立输入提示词  │ {{metadata}}、{{context_ISSUE_ANALYSIS}}    │
+  │           │               │ 渲染成最终 prompt                           │
+  ├───────────┼───────────────┼─────────────────────────────────────────────┤
+  │ requests  │ 生成          │ 调用 Dify /chat-messages API，把渲染好的    │
+  │           │               │ prompt 发给 LLM                             │
+  ├───────────┼───────────────┼─────────────────────────────────────────────┤
+  │ python-do │ 生成          │ 从 .env 读取 DIFY_API_KEY、DIFY_BASE_URL    │
+  │ tenv      │               │                                             │
+  ├───────────┼───────────────┼─────────────────────────────────────────────┤
+  │ lxml      │ 单页切片导出  │ 解析 PPTX 的 XML，在 <a:t> 标签里替换       │
+  │           │               │ {PLACEHOLDER} 占位符，保留字体/颜色/大小    │
+  ├───────────┼───────────────┼─────────────────────────────────────────────┤
+  │ python-mu │ 人工修改兜底  │ FastAPI 处理文件上传（如果前端需要上传 PPTX │
+  │ ltipart   │               │  模板）
+
+  
+  
+  

@@ -1,0 +1,9 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./templates:/app/templates
+      - ./.env:/app/.env:ro
+    restart: unless-stopped

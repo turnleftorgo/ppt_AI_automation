@@ -1,3 +1,5 @@
+迭代一
+
 # PPT AI Automation 重构计划 — 内置模板选择 + 占位符独立生成
 
 ## 当前流程
@@ -79,6 +81,17 @@
 6. 手动修改 textarea 内容，点击"导出"，确认下载的 PPTX 只包含选中的那一页且占位符已替换
 
 
+  
+实验一
+  
+调整算法的流程
+
+  1. 跑一次，看 test_results.json 里哪些 task 内容不理想
+  2. 改 templates/5c_report.yaml 里对应 task 的 prompt 字段
+  3. 重新跑，对比前后结果
+  4. 重复直到满意
+
+
 测试
 
   前置条件
@@ -115,9 +128,4 @@
   - 最后输出汇总表（OK/FAIL 状态）
   - 完整结果保存到 test/test_results.json
 
-  调整算法的流程
-
-  1. 跑一次，看 test_results.json 里哪些 task 内容不理想
-  2. 改 templates/5c_report.yaml 里对应 task 的 prompt 字段
-  3. 重新跑，对比前后结果
-  4. 重复直到满意
+ 
