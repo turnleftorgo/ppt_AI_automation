@@ -78,6 +78,137 @@
 5. 为某个占位符输入提示词，点击"生成"，确认返回结果填入 textarea
 6. 手动修改 textarea 内容，点击"导出"，确认下载的 PPTX 只包含选中的那一页且占位符已替换
 
+# 小更新一
+
+ 用户身份网址识别        
+
+ 数据流
+
+ 浏览器 URL:
+ /?username=admin&display_name=Administrator&email=...&groups=EBR,admin
+        ↓
+ app.js init(): 解析 URLSearchParams → 存入全局变量 currentUser
+        ↓
+ 用户操作 → fetch POST /api/generate → JSON body 带 user 字段
+        ↓
+ main.py: GenerateRequest.user (UserContext 类型)
+        ↓
+ llm_engine.py: generate_content(user=...) → _call_dify(user=...)
+        ↓
+ Dify API: "user": "admin"  (替换掉硬编码的 "ppt-ai-user")
+
+ 改动文件清单
+
+ 1. models/schemas.py — 新增 UserContext 模型，GenerateRequest 嵌入它
+
+ # 新增
+ class UserContext(BaseModel):
+     username: str = "anonymous"
+     display_name: str | None = None
+     email: str | None = None
+     groups: list[str] = []
+
+ # 修改 GenerateRequest，加一个字段
+ class GenerateRequest(BaseModel):
+     ...
+     user: UserContext = UserContext()
+
+ 2. main.py — 传递 user 信息给 generate_content
+
+ # 第 161 行附近，改为：
+ result = await generate_content(
+     req.placeholder_key, rendered_prompt, history,
+     system_prompt=system_prompt,
+     user=req.user.username,  # 新增
+ )
+
+ 3. core/llm_engine.py — 三个改动
+
+ 3a. _call_dify 签名加 user 参数：
+ def _call_dify(query: str, conversation_key: str, user: str = "") -> dict:
+
+ 3b. 请求体使用 user 参数：
+ # 第 32 行，改为：
+ "user": user or "ppt-ai-user",
+
+ 3c. generate_content 签名加 user 参数并传递：
+ async def generate_content(..., user: str = "") -> dict:
+     ...
+     return _call_dify(query, conversation_key=placeholder_key, user=user)
+
+ 3d. conversation_ids 隔离（防多用户冲突）：
+ # 第 113 行附近，conversation_key 改为带 user 前缀
+ return _call_dify(query, conversation_key=f"{user}:{placeholder_key}",
+ user=user)
+
+ 4. static/app.js — 解析 URL 参数，附带到所有 fetch 请求
+
+ 4a. 新增全局变量和解析函数（init 之前）：
+ let currentUser = {
+   username: "anonymous",
+   display_name: null,
+   email: null,
+   groups: [],
+ };
+
+ function parseUserFromURL() {
+   const params = new URLSearchParams(window.location.search);
+   currentUser.username = params.get("username") || "anonymous";
+   currentUser.display_name = params.get("display_name") || null;
+   currentUser.email = params.get("email") || null;
+   const groups = params.get("groups");
+   currentUser.groups = groups ? groups.split(",") : [];
+ }
+
+ 4b. 在 init() 函数开头调用：
+ async function init() {
+   parseUserFromURL();  // 新增这一行
+   // ... 原有逻辑
+ }
+
+ 4c. 三处 fetch 请求的 body 都加上 user 字段：
+ // handleCharacterizeConfirm (约第 312 行)
+ // handleGenerate (约第 385 行)
+ // 级联更新 (约第 423 行)
+ body: JSON.stringify({
+   template_id: ...,
+   placeholder_key: ...,
+   message: ...,
+   history: ...,
+   user_inputs: ...,
+   context: ...,
+   user: currentUser,  // 新增
+ }),
+
+ 验证方法
+
+ 1. 启动服务：python main.py
+ 2. 访问 http://127.0.0.1:8001/?username=admin&display_name=Admin
+ 3. 打开浏览器 Console，输入 currentUser 检查解析结果
+ 4. 生成内容 → 检查 Dify 日志中 user 字段是否为 admin
+
+ # 小更新2
+
+方案很简单：只改 main.py 一个文件。           
+                                                                                
+  在 /api/generate 路由里，调用 generate_content 之前加一个 is_gibberish()      
+  函数做校验，检测到乱码直接返回拒绝响应，不走 Dify。                           
+                                                                                
+  4 条检测规则：                                                                
+  1. 输入少于 2 个字符
+  2. 有效字符（字母/汉字）占比低于 20%（过滤纯数字、纯标点）                    
+  3. 同一字符重复超过 5 次（如 "aaaaaaa"）                  
+  4. 键盘连击模式（如 "asdfgh"、"qwerty"）                                      
+                                                                                
+  校验放在后端，前端不改，防止绕过。                                            
+                                                                                
+  要实现吗
+
+    - 第 37-58 行 — is_gibberish() 函数，4 条检测规则                             
+  - 第 137-139 行 — 在 generate_content 调用前拦截，乱码直接返回 {"ack":     
+  "输入被拒绝", "content": "..."}                                               
+                                                                             
+  重启服务后测试：输入 "asdfgh" 或 "aaaaaaa" 会直接被拒绝，不会调 Dify
 
   
 # 实验一

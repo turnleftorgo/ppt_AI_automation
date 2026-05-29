@@ -2,6 +2,7 @@
 FastAPI entry point for the YAML-driven template-based PPTX generation system.
 """
 import os
+import re
 from io import BytesIO
 
 from dotenv import load_dotenv
@@ -31,6 +32,64 @@ yaml_loader = YAMLLoader(TEMPLATES_DIR)
 yaml_loader.load_all()
 
 ppt_core = PPTCore()
+
+
+def is_gibberish(text: str) -> str | None:
+    """检测单条文本是否为乱码，返回拒绝原因或 None（表示正常）"""
+    text = text.strip()
+
+    if len(text) < 2:
+        return "输入内容过短，请提供有效信息"
+
+    cleaned = re.sub(r'[\s\W\d]', '', text)
+    if len(cleaned) / max(len(text), 1) < 0.2:
+        return "输入内容无效，请提供有意义的描述"
+
+    if re.search(r'(.)\1{4,}', text):
+        return "检测到重复字符，请提供有效信息"
+
+    # 键盘连击模式（扩展列表）
+    gibberish_patterns = [
+        r'asdfgh', r'qwerty', r'zxcvbn', r'hjkl',
+        r'qwertz', r'azerty', r'wasd', r'jkl;',
+    ]
+    lower = text.lower()
+    for pat in gibberish_patterns:
+        if pat in lower:
+            return "检测到无意义输入，请提供有效信息"
+
+    # 纯字母文本的进一步检测
+    alpha_only = re.sub(r'[^a-zA-Z]', '', text)
+    if len(alpha_only) >= 6:
+        vowels = set('aeiouAEIOU')
+        vowel_count = sum(1 for c in alpha_only if c in vowels)
+        consonant_count = len(alpha_only) - vowel_count
+
+        # 规则：辅音占比过高（随机乱码通常辅音密集）
+        if len(alpha_only) > 0 and consonant_count / len(alpha_only) > 0.8:
+            return "检测到无意义输入，请提供有效信息"
+
+        # 规则：相同二字母组合重复出现（如 hehwehehgs 中 "he" 出现 3 次）
+        bigrams = [alpha_only[i:i+2].lower() for i in range(len(alpha_only) - 1)]
+        if len(bigrams) >= 4:
+            from collections import Counter
+            counts = Counter(bigrams)
+            most_common_count = counts.most_common(1)[0][1]
+            if most_common_count >= 3 and len(alpha_only) <= 15:
+                return "检测到无意义输入，请提供有效信息"
+
+    return None
+
+
+def validate_user_inputs(user_inputs: dict) -> str | None:
+    """校验 metadata 表单字段，返回拒绝原因或 None（表示正常）"""
+    for key, value in user_inputs.items():
+        if not isinstance(value, str) or not value.strip():
+            continue
+        reason = is_gibberish(value)
+        if reason:
+            return f"字段「{key}」{reason}"
+    return None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -106,6 +165,15 @@ async def generate(req: GenerateRequest):
     if not cfg:
         raise HTTPException(404, f"Template '{req.template_id}' not found")
 
+    # 垃圾输入检测：校验 metadata 表单 + 对话框消息
+    if req.user_inputs:
+        reject_reason = validate_user_inputs(req.user_inputs)
+        if reject_reason:
+            return {"ack": "输入被拒绝", "content": reject_reason}
+    reject_reason = is_gibberish(req.message)
+    if reject_reason:
+        return {"ack": "输入被拒绝", "content": reject_reason}
+
     # Find the LLM task for this placeholder (search llm_tasks + closure_tasks)
     task = None
     for t in cfg.get("llm_tasks", []):
@@ -158,6 +226,7 @@ async def generate(req: GenerateRequest):
     result = await generate_content(
         req.placeholder_key, rendered_prompt, history,
         system_prompt=system_prompt,
+        user=req.user.username,
     )
 
     # 首次生成时，强制在 ack 中附加免责声明
@@ -208,4 +277,4 @@ async def export_pptx(req: ExportRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=3001)

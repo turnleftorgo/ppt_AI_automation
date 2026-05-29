@@ -17,7 +17,7 @@ DIFY_BASE_URL = os.getenv("DIFY_BASE_URL", "").rstrip("/")
 _conversation_ids: dict[str, str] = {}
 
 
-def _call_dify(query: str, conversation_key: str) -> dict:
+def _call_dify(query: str, conversation_key: str, user: str = "") -> dict:
     """Call Dify chat API and return the parsed JSON response."""
     url = f"{DIFY_BASE_URL}/chat-messages"
     headers = {
@@ -29,7 +29,7 @@ def _call_dify(query: str, conversation_key: str) -> dict:
         "inputs": {},
         "query": query,
         "response_mode": "blocking",
-        "user": "ppt-ai-user",
+        "user": user or "ppt-ai-user",
     }
 
     # Attach conversation_id if we have one for this placeholder
@@ -86,6 +86,7 @@ async def generate_content(
     message: str,
     history: list[dict],
     system_prompt: str = None,
+    user: str = "",
 ) -> dict:
     """
     Multi-turn conversation generation for a single placeholder.
@@ -110,7 +111,7 @@ async def generate_content(
     query = f"{effective_system}\n\n---\n\n[当前占位符：{placeholder_key}]\n\n{message}"
 
     try:
-        return _call_dify(query, conversation_key=placeholder_key)
+        return _call_dify(query, conversation_key=f"{user}:{placeholder_key}", user=user)
     except requests.exceptions.HTTPError as e:
         error_body = e.response.text if e.response else str(e)
         return {

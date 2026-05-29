@@ -34,6 +34,13 @@ class ScanResult(BaseModel):
     slides: List[SlidePlaceholderGroup]
 
 
+class UserContext(BaseModel):
+    username: str = "anonymous"
+    display_name: str | None = None
+    email: str | None = None
+    groups: list[str] = Field(default_factory=list)
+
+
 class ChatMessage(BaseModel):
     role: str = Field(..., description="'user' or 'assistant'")
     content: str
@@ -51,6 +58,10 @@ class GenerateRequest(BaseModel):
     context: Dict[str, str] = Field(
         default_factory=dict,
         description="Upstream placeholder results for downstream prompt injection",
+    )
+    user: UserContext = Field(
+        default_factory=UserContext,
+        description="User identity from URL query params",
     )
 
 

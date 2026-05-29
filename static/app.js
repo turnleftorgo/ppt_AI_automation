@@ -36,9 +36,28 @@ function collectContext(placeholderKey) {
   return ctx;
 }
 
+// ── User identity from URL query params ─────────────────────────────────────
+
+let currentUser = {
+  username: "anonymous",
+  display_name: null,
+  email: null,
+  groups: [],
+};
+
+function parseUserFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  currentUser.username = params.get("username") || "anonymous";
+  currentUser.display_name = params.get("display_name") || null;
+  currentUser.email = params.get("email") || null;
+  const groups = params.get("groups");
+  currentUser.groups = groups ? groups.split(",") : [];
+}
+
 // ── Init: Load templates on page load ────────────────────────────────────────
 
 async function init() {
+  parseUserFromURL();
   const select = document.getElementById("templateSelect");
   const desc = document.getElementById("templateDesc");
 
@@ -319,6 +338,7 @@ async function handleCharacterizeConfirm() {
           history: [],
           user_inputs: userInputs,
           context,
+          user: currentUser,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -392,6 +412,7 @@ async function handleGenerate(name) {
         history: chatHistory[name],
         user_inputs: userInputs,
         context,
+        user: currentUser,
       }),
     });
     if (!res.ok) throw new Error(await res.text());
@@ -430,6 +451,7 @@ async function handleGenerate(name) {
             history: [],
             user_inputs: userInputs,
             context: ctx,
+            user: currentUser,
           }),
         });
         if (!dsRes.ok) throw new Error(await dsRes.text());
