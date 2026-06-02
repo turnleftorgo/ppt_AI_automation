@@ -89,7 +89,8 @@ class PPTCore:
         return f"Slide {slide_idx}"
 
     def export_single_slide(self, file_path: str, template_id: int,
-                            content_map: Dict[str, str]) -> bytes:
+                            content_map: Dict[str, str],
+                            font_config: Dict = None) -> bytes:
         """
         Open the built-in PPTX, delete all slides except template_id,
         replace placeholders, and return the resulting PPTX as bytes.

@@ -1,7 +1,7 @@
-template_id: "standard_report_v1"
-template_name: "Standard Report"
+template_id: "faca_report_v1"
+template_name: "FACA Report"
 description: "標準報告模板，包含Meta Data、問題描述、問題分析、根本原因、圍堵措施、改善對策"
-ppt_file_path: "Standard_report.pptx"
+ppt_file_path: "FACA_Report.pptx"
 slide_index: 1
 
 system_prompt: |
@@ -81,10 +81,6 @@ direct_mappings:
     target_placeholder: "KEYWORDS"
   - user_input_id: "issue_description"
     target_placeholder: "ISSUE_DESCRIPTION"
-  - user_input_id: "file_name"
-    target_placeholder: "REPORT_TITLE"
-  - user_input_id: "file_name"
-    target_placeholder: "REPORT_SUBTITLE"
 
 # ── Section 3: AI generation tasks ──────────────────────────────────────────
 llm_tasks:
@@ -234,7 +230,6 @@ font_config:
   # 占位符分类
   title_placeholders:
     - REPORT_TITLE
-    - REPORT_SUBTITLE
 
   content_placeholders:
     - FILE_NAME

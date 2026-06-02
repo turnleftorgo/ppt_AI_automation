@@ -38,10 +38,8 @@ def is_gibberish(text: str) -> str | None:
     """检测单条文本是否为乱码，返回拒绝原因或 None（表示正常）"""
     text = text.strip()
 
-    if len(text) < 2:
-        return "输入内容过短，请提供有效信息"
-
-    cleaned = re.sub(r'[\s\W\d]', '', text)
+    # 保留字母、数字、中文字符
+    cleaned = re.sub(r'[^\w\u4e00-\u9fff]', '', text)
     if len(cleaned) / max(len(text), 1) < 0.2:
         return "输入内容无效，请提供有意义的描述"
 
@@ -57,26 +55,6 @@ def is_gibberish(text: str) -> str | None:
     for pat in gibberish_patterns:
         if pat in lower:
             return "检测到无意义输入，请提供有效信息"
-
-    # 纯字母文本的进一步检测
-    alpha_only = re.sub(r'[^a-zA-Z]', '', text)
-    if len(alpha_only) >= 6:
-        vowels = set('aeiouAEIOU')
-        vowel_count = sum(1 for c in alpha_only if c in vowels)
-        consonant_count = len(alpha_only) - vowel_count
-
-        # 规则：辅音占比过高（随机乱码通常辅音密集）
-        if len(alpha_only) > 0 and consonant_count / len(alpha_only) > 0.8:
-            return "检测到无意义输入，请提供有效信息"
-
-        # 规则：相同二字母组合重复出现（如 hehwehehgs 中 "he" 出现 3 次）
-        bigrams = [alpha_only[i:i+2].lower() for i in range(len(alpha_only) - 1)]
-        if len(bigrams) >= 4:
-            from collections import Counter
-            counts = Counter(bigrams)
-            most_common_count = counts.most_common(1)[0][1]
-            if most_common_count >= 3 and len(alpha_only) <= 15:
-                return "检测到无意义输入，请提供有效信息"
 
     return None
 
@@ -261,9 +239,23 @@ async def export_pptx(req: ExportRequest):
     # AI results + closure inputs
     content_map.update(req.final_data)
 
+    # 拼接标题: 机种｜制程 关键词 FACA
+    if "REPORT_TITLE" not in content_map:
+        title_parts = []
+        for field in ["ipad_type", "build", "process", "keywords"]:
+            val = req.user_inputs.get(field, "").strip()
+            if val:
+                title_parts.append(val)
+        title_parts.append("FACA")
+        content_map["REPORT_TITLE"] = re.sub(r' +', ' ', title_parts[0] + "｜" + " ".join(title_parts[1:]))
+
     # Export single slide (slide_index=1 since each YAML = one slide)
     slide_index = cfg.get("slide_index", 1)
-    data = ppt_core.export_single_slide(ppt_path, slide_index, content_map)
+
+    # Get font config from YAML template
+    font_config = cfg.get("font_config", {})
+
+    data = ppt_core.export_single_slide(ppt_path, slide_index, content_map, font_config)
     return StreamingResponse(
         BytesIO(data),
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
