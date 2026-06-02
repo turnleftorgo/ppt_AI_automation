@@ -4,6 +4,11 @@ services:
     ports:
       - "3001:3001"
     volumes:
-      - ./templates:/app/templates
-      - ./.env:/app/.env:ro
+    - ./templates:/app/templates                                                
+    - ./.env:/app/.env:ro                                                       
+    - ./core:/app/core                                                          
+    - ./models:/app/models                                                      
+    - ./static:/app/static                                                      
+    - ./test:/app/test                                                          
+    - ./main.py:/app/main.py 
     restart: unless-stopped
