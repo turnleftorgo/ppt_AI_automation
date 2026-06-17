@@ -235,7 +235,6 @@ function renderAITask(container, task) {
       <span class="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs font-mono">
         ${escapeHtml(name)}
       </span>
-      ${task.use_rag ? '<span class="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs">RAG</span>' : ''}
     </div>
 
     <!-- Chat area -->

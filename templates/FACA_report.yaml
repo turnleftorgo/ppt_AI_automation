@@ -115,7 +115,8 @@ llm_tasks:
       問題描述: {{issue_description}}
 
 
-    use_rag: false
+    use_rag: true
+    rag_tag: "faca_kb"
 
   - target_placeholder: "ROOT_CAUSE"
     module: "根本原因"
@@ -149,7 +150,8 @@ llm_tasks:
       Meta Data: {{metadata}}
       問題描述: {{issue_description}}
       問題分析: {{context_ISSUE_ANALYSIS}}
-    use_rag: false
+    use_rag: true
+    rag_tag: "faca_kb"
 
   - target_placeholder: "CONTAINMENT"
     module: "圍堵措施"
@@ -185,7 +187,8 @@ llm_tasks:
       問題描述: {{issue_description}}
       問題分析: {{context_ISSUE_ANALYSIS}}
       根本原因: {{context_ROOT_CAUSE}}
-    use_rag: false
+    use_rag: true
+    rag_tag: "faca_kb"
 
   - target_placeholder: "CORRECTIVE"
     module: "改善對策"
@@ -219,7 +222,8 @@ llm_tasks:
       問題分析: {{context_ISSUE_ANALYSIS}}
       根本原因: {{context_ROOT_CAUSE}}
       圍堵措施: {{context_CONTAINMENT}}
-    use_rag: false
+    use_rag: true
+    rag_tag: "faca_kb"
 
 # ── Section 4: Font size configuration ────────────────────────────────────────
 font_config:

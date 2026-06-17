@@ -1,23 +1,36 @@
 """
 LLM engine — Dify-powered multi-turn conversation for placeholder content generation.
 """
+import asyncio
 import json
 import os
 import re
 
-import requests
+import httpx
 
 
 # ── Configuration (Dify API) ─────────────────────────────────────────────────
 DIFY_API_KEY = os.getenv("DIFY_API_KEY", "")
 DIFY_BASE_URL = os.getenv("DIFY_BASE_URL", "").rstrip("/")
 
+# ── Shared async HTTP client (connection pooling) ─────────────────────────────
+_http_client: httpx.AsyncClient | None = None
+
+
+async def _get_http_client() -> httpx.AsyncClient:
+    """Get or create a shared async HTTP client."""
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(timeout=120.0)
+    return _http_client
+
 
 # ── Conversation ID cache (per placeholder, for multi-turn) ──────────────────
 _conversation_ids: dict[str, str] = {}
+_conversation_lock = asyncio.Lock()
 
 
-def _call_dify(query: str, conversation_key: str, user: str = "") -> dict:
+async def _call_dify(query: str, conversation_key: str, user: str = "") -> dict:
     """Call Dify chat API and return the parsed JSON response."""
     url = f"{DIFY_BASE_URL}/chat-messages"
     headers = {
@@ -33,18 +46,21 @@ def _call_dify(query: str, conversation_key: str, user: str = "") -> dict:
     }
 
     # Attach conversation_id if we have one for this placeholder
-    conv_id = _conversation_ids.get(conversation_key)
+    async with _conversation_lock:
+        conv_id = _conversation_ids.get(conversation_key)
     if conv_id:
         body["conversation_id"] = conv_id
 
-    resp = requests.post(url, headers=headers, json=body, timeout=120)
+    client = await _get_http_client()
+    resp = await client.post(url, headers=headers, json=body)
     resp.raise_for_status()
     data = resp.json()
 
     # Cache conversation_id for multi-turn continuity
     new_conv_id = data.get("conversation_id")
     if new_conv_id:
-        _conversation_ids[conversation_key] = new_conv_id
+        async with _conversation_lock:
+            _conversation_ids[conversation_key] = new_conv_id
 
     answer = data.get("answer", "")
     return _parse_json_answer(answer)
@@ -111,8 +127,8 @@ async def generate_content(
     query = f"{effective_system}\n\n---\n\n[当前占位符：{placeholder_key}]\n\n{message}"
 
     try:
-        return _call_dify(query, conversation_key=f"{user}:{placeholder_key}", user=user)
-    except requests.exceptions.HTTPError as e:
+        return await _call_dify(query, conversation_key=f"{user}:{placeholder_key}", user=user)
+    except httpx.HTTPStatusError as e:
         error_body = e.response.text if e.response else str(e)
         return {
             "ack": f"[API错误] {e.response.status_code if e.response else 'unknown'}",

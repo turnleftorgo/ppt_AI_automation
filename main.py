@@ -180,10 +180,12 @@ async def generate(req: GenerateRequest):
             render_inputs[f"context_{k}"] = v
     rendered_prompt = build_prompt(task["prompt"], render_inputs)
 
-    # RAG context (stubbed — returns empty string, no impact when disabled)
+    # RAG context — 只传关键信息给知识库检索，不传完整 prompt
     rag_context = ""
     if task.get("use_rag"):
-        rag_context = await get_rag_context(task.get("rag_tag", ""), rendered_prompt)
+        issue_desc = req.user_inputs.get("issue_description", "")
+        rag_query = f"{metadata} {issue_desc}".strip()
+        rag_context = await get_rag_context(task.get("rag_tag", ""), rag_query)
 
     # Build system prompt (task-specific or YAML-level)
     system_prompt = task.get("system_prompt") or cfg.get("system_prompt", "")

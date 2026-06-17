@@ -1,22 +1,50 @@
 """
-RAG context retriever -- stub implementation.
-
-Replace with actual vector DB retrieval when RAG infrastructure is ready.
-The system works fully without RAG (use_rag: false or when this returns empty).
+RAG context retriever — calls a Dify App (with knowledge base) for retrieval.
 """
+import os
+import re
+import requests
+
+
+RAG_DIFY_BASE_URL = os.getenv("RAG_DIFY_BASE_URL", "").strip().rstrip("/")
+RAG_API_KEY = os.getenv("RAG_API_KEY", "")
 
 
 async def get_rag_context(rag_tag: str, query: str) -> str:
     """
-    Retrieve relevant context from knowledge base.
+    调用带知识库的 Dify App，用关键信息检索相关文档片段。
 
     Args:
-        rag_tag: Knowledge base identifier (e.g. "containment_kb")
-        query: The rendered prompt to search against
+        rag_tag: 知识库标识（预留扩展，当前未用）
+        query: 检索文本（metadata + issue_description）
 
     Returns:
-        Context string to inject into system prompt. Empty string = no RAG context.
+        检索结果文本；未配置时返回空字符串（不影响现有流程）
     """
-    # STUB: return empty string (no RAG yet)
-    # Future: query vector DB with rag_tag filter
-    return ""
+    if not RAG_API_KEY or not RAG_DIFY_BASE_URL:
+        return ""
+
+    url = f"{RAG_DIFY_BASE_URL}/chat-messages"
+    headers = {
+        "Authorization": f"Bearer {RAG_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "inputs": {},
+        "query": query,
+        "response_mode": "blocking",
+        "user": "rag-retriever",
+    }
+
+    try:
+        resp = requests.post(url, headers=headers, json=body, timeout=60)
+        resp.raise_for_status()
+        data = resp.json()
+
+        answer = data.get("answer", "").strip()
+        # 清理 think 标签
+        answer = re.sub(r"<think>[\s\S]*?</think>", "", answer).strip()
+        return answer
+
+    except Exception:
+        return ""
