@@ -80,3 +80,7 @@ class ExportRequest(BaseModel):
         default_factory=dict,
         description="AI-generated + closure placeholder values",
     )
+    rag_results: str = Field(
+        default="",
+        description="RAG knowledge base retrieval results for reference slide",
+    )

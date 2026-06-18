@@ -88,32 +88,39 @@ class PPTCore:
                     return merged
         return f"Slide {slide_idx}"
 
-    def export_single_slide(self, file_path: str, template_id: int,
+    def export_single_slide(self, file_path: str, template_id,
                             content_map: Dict[str, str],
                             font_config: Dict = None) -> bytes:
         """
-        Open the built-in PPTX, delete all slides except template_id,
+        Open the built-in PPTX, delete all slides except those specified,
         replace placeholders, and return the resulting PPTX as bytes.
+
+        template_id can be an int (single slide) or a list of ints (multiple slides).
         """
+        # Normalize slide indices to a list
+        if isinstance(template_id, int):
+            keep_indices = [template_id]
+        else:
+            keep_indices = list(template_id)
+
         scan = self.scan_placeholders(file_path)
-        details = [d for d in scan["details"] if d["slide_index"] == template_id]
+        details = [d for d in scan["details"] if d["slide_index"] in keep_indices]
 
         with ZipFile(file_path, "r") as src:
             slide_paths = self._sorted(src, "ppt/slides/slide", ".xml")
-            rels_path = "ppt/slides/_rels/slide.rels.xml"
             rels_paths = self._sorted(src, "ppt/slides/_rels/slide", ".xml.rels")
 
             # Determine which slide files to keep/remove
-            keep_slide = f"ppt/slides/slide{template_id}.xml"
-            keep_rels = f"ppt/slides/_rels/slide{template_id}.xml.rels"
+            keep_slides = {f"ppt/slides/slide{idx}.xml" for idx in keep_indices}
+            keep_rels_set = {f"ppt/slides/_rels/slide{idx}.xml.rels" for idx in keep_indices}
 
             # Build set of files to remove (other slides + their rels)
             remove_files = set()
             for sp in slide_paths:
-                if sp != keep_slide:
+                if sp not in keep_slides:
                     remove_files.add(sp)
             for rp in rels_paths:
-                if rp != keep_rels:
+                if rp not in keep_rels_set:
                     remove_files.add(rp)
 
             # Parse presentation.xml to strip removed slide references
@@ -138,29 +145,32 @@ class PPTCore:
                         except ValueError:
                             pass
 
-                keep_rid = slide_rids.get(template_id)
+                keep_rids = {slide_rids[idx] for idx in keep_indices if idx in slide_rids}
                 for sld_id in list(sld_id_lst[0]):
-                    if sld_id.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id") != keep_rid:
+                    if sld_id.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id") not in keep_rids:
                         sld_id_lst[0].remove(sld_id)
 
                 modified = {pres_path: etree.tostring(pres_tree, xml_declaration=True,
                                                        encoding="UTF-8", standalone=True)}
 
-                # Fill placeholders on the kept slide
-                if details:
-                    slide_tree = etree.fromstring(src.read(keep_slide))
-                    if self._fill_slide(slide_tree, details, content_map):
-                        modified[keep_slide] = etree.tostring(slide_tree, xml_declaration=True,
-                                                               encoding="UTF-8", standalone=True)
+                # Fill placeholders on each kept slide
+                for idx in keep_indices:
+                    keep_slide = f"ppt/slides/slide{idx}.xml"
+                    slide_details = [d for d in details if d["slide_index"] == idx]
+                    if slide_details and keep_slide in slide_paths:
+                        slide_tree = etree.fromstring(src.read(keep_slide))
+                        if self._fill_slide(slide_tree, slide_details, content_map):
+                            modified[keep_slide] = etree.tostring(slide_tree, xml_declaration=True,
+                                                                   encoding="UTF-8", standalone=True)
 
-                # Also handle notes for this slide
-                notes_path = keep_slide.replace("slides/slide", "notesSlides/notesSlide")
-                note_items = [d for d in details if d["container_type"] == "notes"]
-                if note_items and notes_path in src.namelist():
-                    notes_tree = etree.fromstring(src.read(notes_path))
-                    if self._fill_notes(notes_tree, note_items, content_map):
-                        modified[notes_path] = etree.tostring(notes_tree, xml_declaration=True,
-                                                               encoding="UTF-8", standalone=True)
+                    # Also handle notes for this slide
+                    notes_path = keep_slide.replace("slides/slide", "notesSlides/notesSlide")
+                    note_items = [d for d in slide_details if d["container_type"] == "notes"]
+                    if note_items and notes_path in src.namelist():
+                        notes_tree = etree.fromstring(src.read(notes_path))
+                        if self._fill_notes(notes_tree, note_items, content_map):
+                            modified[notes_path] = etree.tostring(notes_tree, xml_declaration=True,
+                                                                   encoding="UTF-8", standalone=True)
 
                 # Repack, skipping removed files
                 buf = BytesIO()
@@ -432,7 +442,7 @@ class PPTCore:
     def _do_fill(self, para, item, cmap) -> bool:
         """Replace placeholders in merged text, then redistribute across runs."""
         new_text = item["paragraph_text"]
-        for name, value in cmap.items():
+        for name, value in sorted(cmap.items(), key=lambda kv: len(kv[0]), reverse=True):
             new_text = new_text.replace(f"{{{name}}}", value)
         if new_text == item["paragraph_text"]:
             return False

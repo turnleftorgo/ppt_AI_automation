@@ -214,6 +214,10 @@ async def generate(req: GenerateRequest):
         disclaimer = "以上为基于过往经验的推测性分析，仅供参考。如您有更多现场细节，随时告诉我，我可以进一步完善。"
         result["ack"] = disclaimer
 
+    # 返回 RAG 检索结果，前端可存储并在导出时传回
+    if rag_context:
+        result["rag_context"] = rag_context
+
     return result
 
 
@@ -240,6 +244,15 @@ async def export_pptx(req: ExportRequest):
 
     # AI results + closure inputs
     content_map.update(req.final_data)
+
+    # RAG 参考资料 → Related_text / Related_text_2 占位符（第二页）
+    if req.rag_results:
+        fragments = re.split(r'(?=【检索片段\s*\d+】)', req.rag_results)
+        fragments = [f.strip() for f in fragments if f.strip()]
+        if len(fragments) >= 1:
+            content_map["Related_text"] = fragments[0]
+        if len(fragments) >= 2:
+            content_map["Related_text_2"] = "\n\n".join(fragments[1:])
 
     # 拼接标题: 机种｜制程 关键词 FACA
     if "REPORT_TITLE" not in content_map:

@@ -4,6 +4,7 @@ let currentConfig = null;     // full YAML config for selected template
 let userInputs = {};          // { input_id: value } from Characterize section
 let chatHistory = {};         // { target_placeholder: [{ role, content, fullContent? }] }
 let generatingSet = new Set();
+let ragContext = "";  // RAG knowledge base retrieval results
 
 // Preview field registry: [{ key, label, source, group }]
 // source: 'userInputs' | 'chatHistory'
@@ -107,6 +108,7 @@ async function handleTemplateChange(templateId) {
   userInputs = {};
   chatHistory = {};
   generatingSet.clear();
+  ragContext = "";
 
   desc.textContent = currentConfig.description || `已选择：${currentConfig.template_name}`;
 
@@ -349,6 +351,8 @@ async function handleCharacterizeConfirm() {
         content: data.ack || "",
         fullContent: data.content || "",
       });
+      // Capture RAG context for reference slide
+      if (data.rag_context) ragContext = data.rag_context;
       renderChatHistory(name);
       updatePreview();
 
@@ -424,6 +428,8 @@ async function handleGenerate(name) {
         content: data.ack || "",
         fullContent: data.content || "",
       });
+      // Capture RAG context for reference slide
+      if (data.rag_context) ragContext = data.rag_context;
       renderChatHistory(name);
     }
 
@@ -462,6 +468,8 @@ async function handleGenerate(name) {
           content: dsData.ack || "",
           fullContent: dsData.content || "",
         });
+        // Capture RAG context for reference slide
+        if (dsData.rag_context) ragContext = dsData.rag_context;
         renderChatHistory(downstreamKey);
         updatePreview();
 
@@ -690,6 +698,7 @@ async function handleExport() {
         template_id: currentConfig.template_id,
         user_inputs: userInputs,
         final_data: exportFinal,
+        rag_results: ragContext,
       }),
     });
     if (!res.ok) throw new Error(await res.text());
