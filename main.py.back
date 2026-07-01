@@ -1,7 +1,6 @@
 """
 FastAPI entry point for the YAML-driven template-based PPTX generation system.
 """
-import json
 import os
 import re
 from io import BytesIO
@@ -33,32 +32,6 @@ yaml_loader = YAMLLoader(TEMPLATES_DIR)
 yaml_loader.load_all()
 
 ppt_core = PPTCore()
-
-# RAG context is produced during /api/generate but consumed during /api/export.
-# Keep a server-side copy so export does not depend only on the browser relaying it.
-rag_context_cache: dict[str, list[str]] = {}
-
-
-def _rag_cache_key(template_id: str, user_inputs: dict) -> str:
-    payload = {
-        "template_id": template_id,
-        "user_inputs": user_inputs or {},
-    }
-    return json.dumps(payload, sort_keys=True, ensure_ascii=False)
-
-
-def _remember_rag_context(template_id: str, user_inputs: dict, rag_context: str) -> None:
-    value = (rag_context or "").strip()
-    if not value:
-        return
-    key = _rag_cache_key(template_id, user_inputs)
-    cached = rag_context_cache.setdefault(key, [])
-    if value not in cached:
-        cached.append(value)
-
-
-def _cached_rag_context(template_id: str, user_inputs: dict) -> str:
-    return "\n\n".join(rag_context_cache.get(_rag_cache_key(template_id, user_inputs), []))
 
 
 def is_gibberish(text: str) -> str | None:
@@ -213,7 +186,6 @@ async def generate(req: GenerateRequest):
         issue_desc = req.user_inputs.get("issue_description", "")
         rag_query = f"{metadata} {issue_desc}".strip()
         rag_context = await get_rag_context(task.get("rag_tag", ""), rag_query)
-        _remember_rag_context(req.template_id, req.user_inputs, rag_context)
 
     # Build system prompt (task-specific or YAML-level)
     system_prompt = task.get("system_prompt") or cfg.get("system_prompt", "")
@@ -274,21 +246,13 @@ async def export_pptx(req: ExportRequest):
     content_map.update(req.final_data)
 
     # RAG 参考资料 → Related_text / Related_text_2 占位符（第二页）
-    reference_placeholders = {"Related_text", "Related_text_2"}
-    has_reference_slide = bool(reference_placeholders & set(ppt_core.scan_placeholders(ppt_path)["unique_placeholders"]))
-    rag_results = req.rag_results.strip() or _cached_rag_context(req.template_id, req.user_inputs)
-    if rag_results:
-        fragments = re.split(r'(?=【检索片段\s*\d+】)', rag_results)
+    if req.rag_results:
+        fragments = re.split(r'(?=【检索片段\s*\d+】)', req.rag_results)
         fragments = [f.strip() for f in fragments if f.strip()]
         if len(fragments) >= 1:
             content_map["Related_text"] = fragments[0]
         if len(fragments) >= 2:
             content_map["Related_text_2"] = "\n\n".join(fragments[1:])
-        elif has_reference_slide:
-            content_map["Related_text_2"] = ""
-    elif has_reference_slide:
-        content_map["Related_text"] = "未检索到相关参考资料。"
-        content_map["Related_text_2"] = ""
 
     # 拼接标题: 机种｜制程 关键词 FACA
     if "REPORT_TITLE" not in content_map:
