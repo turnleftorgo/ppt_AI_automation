@@ -10,26 +10,22 @@ let ragContexts = [];         // RAG knowledge base retrieval results
 // source: 'userInputs' | 'chatHistory'
 let previewFields = [];
 
-// ── Dependency graph for serial generation ────────────────────────────────────
-const generationOrder = ["ISSUE_ANALYSIS", "ROOT_CAUSE", "CONTAINMENT", "CORRECTIVE"];
-
-const dependencies = {
-  ISSUE_ANALYSIS: [],
-  ROOT_CAUSE: ["ISSUE_ANALYSIS"],
-  CONTAINMENT: ["ISSUE_ANALYSIS", "ROOT_CAUSE"],
-  CORRECTIVE: ["ISSUE_ANALYSIS", "ROOT_CAUSE", "CONTAINMENT"],
-};
-
-const downstream = {
-  ISSUE_ANALYSIS: ["ROOT_CAUSE", "CONTAINMENT", "CORRECTIVE"],
-  ROOT_CAUSE: ["CONTAINMENT", "CORRECTIVE"],
-  CONTAINMENT: ["CORRECTIVE"],
-  CORRECTIVE: [],
-};
+// ── Dependency graph for serial generation (read from YAML context_graph) ───
+function getContextGraph() {
+  const cg = currentConfig && currentConfig.context_graph;
+  if (cg && cg.generation_order) return cg;
+  // Fallback: no context_graph defined — derive from llm_tasks in YAML order
+  const tasks = (currentConfig && currentConfig.llm_tasks) || [];
+  const order = tasks.map(t => t.target_placeholder);
+  const deps = {}; const ds = {};
+  for (const t of tasks) { deps[t.target_placeholder] = []; ds[t.target_placeholder] = []; }
+  return { generation_order: order, dependencies: deps, downstream: ds };
+}
 
 function collectContext(placeholderKey) {
+  const graph = getContextGraph();
   const ctx = {};
-  for (const dep of (dependencies[placeholderKey] || [])) {
+  for (const dep of (graph.dependencies[placeholderKey] || [])) {
     const history = chatHistory[dep] || [];
     const lastAI = [...history].reverse().find(m => m.role === "assistant");
     ctx[dep] = lastAI ? (lastAI.fullContent || lastAI.content || "") : "";
@@ -320,12 +316,13 @@ async function handleCharacterizeConfirm() {
   let succeeded = 0;
   let failed = 0;
 
-  for (let i = 0; i < generationOrder.length; i++) {
-    const name = generationOrder[i];
+  const genOrder = getContextGraph().generation_order;
+  for (let i = 0; i < genOrder.length; i++) {
+    const name = genOrder[i];
     const task = taskMap[name];
     if (!task) continue;  // skip if not in this template's llm_tasks
 
-    statusEl.textContent = `正在生成 (${i + 1}/${generationOrder.length})：${task.module_label || name}...`;
+    statusEl.textContent = `正在生成 (${i + 1}/${genOrder.length})：${task.module_label || name}...`;
 
     const statusTaskEl = document.getElementById(`status-${cssId(name)}`);
     if (statusTaskEl) {
@@ -382,7 +379,7 @@ async function handleCharacterizeConfirm() {
   btn.textContent = "确认并生成";
   statusEl.textContent = failed > 0
     ? `完成：${succeeded} 成功，${failed} 失败`
-    : `全部完成 (${succeeded}/${generationOrder.length})`;
+    : `全部完成 (${succeeded}/${genOrder.length})`;
   statusEl.className = failed > 0 ? "text-sm text-yellow-600" : "text-sm text-green-600";
 }
 
@@ -444,7 +441,7 @@ async function handleGenerate(name) {
     statusEl.className = "mt-2 text-xs text-green-600";
 
     // Cascade: regenerate downstream tasks
-    for (const downstreamKey of (downstream[name] || [])) {
+    for (const downstreamKey of (getContextGraph().downstream[name] || [])) {
       const dsStatusEl = document.getElementById(`status-${cssId(downstreamKey)}`);
       if (dsStatusEl) {
         dsStatusEl.textContent = "上游更新，正在重新生成...";

@@ -1,0 +1,174 @@
+template_id: "8d_report_v1"
+template_name: "8D 异常处理报告"
+description: "8D异常处理报告模板，包含D1~D8八个阶段"
+ppt_file_path: "8D Report.pptx"
+
+# ── Section 1: User inputs (D1/D2/D8 - Characterize phase) ──────────────────
+user_inputs:
+  - id: "team_info"
+    label: "D1 - Team (团队成员)"
+    placeholder: "请输入团队成员信息"
+    type: "textarea"
+    required: true
+
+  - id: "problem_description"
+    label: "D2 - Problem Description (问题描述)"
+    placeholder: "请详细描述异常情况"
+    type: "textarea"
+    required: true
+
+# ── Section 2: Direct mappings (user input -> PPT placeholder, no AI) ───────
+direct_mappings:
+  - user_input_id: "team_info"
+    target_placeholder: "user input establish the team"
+  - user_input_id: "problem_description"
+    target_placeholder: "user input description"
+
+# ── Section 3: AI generation tasks (grouped by module) ──────────────────────
+llm_tasks:
+  # D3 - Containment
+  - target_placeholder: "Fill_in_predicted_containment"
+    module: "Contain"
+    module_label: "D3 - Containment (圍堵對策)"
+    prompt: |
+      # Task / 任務
+      請根據【問題描述】與已知信息，推演並撰寫 D3 圍堵措施（Containment Actions）。
+      1. 物料三維清查：嚴格按「已出貨/客戶端(FAE攔截/Sorting)」、「廠內庫存/扣帳(Hold/鎖2D碼)」、「在製品 WIP(停線全檢)」三個維度給出明確指令與數量。
+      2. 檢驗手段對齊：明確 Sorting 使用的工具（目視/CCD放大/實配檢具/Go-NoGo）。
+      3. 標識出貨：重工或全檢 OK 物料的外箱專屬標識要求。
+
+      # Format / 格式
+      嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+      - "ack": 簡短回應，確認物料管控維度。
+      - "content": 最終文本內容，分步驟條列，動賓結構開頭，重度使用行業黑話（Sorting, Hold, FAE, 2D碼, WIP, Go-NoGo）。字數控制在120字左右。
+
+      【輸入區】
+      問題描述: {{problem_description}}
+      團隊成員: {{team_info}}
+    use_rag: true
+    rag_tag: "faca_kb"
+
+  # D4 - Root Cause
+  - target_placeholder: "Fill_in_predicted_causes"
+    module: "Cause"
+    module_label: "D4 - Root Cause (根本原因)"
+    prompt: |
+      # Task / 任務
+      請根據【問題描述】與【圍堵對策】，提煉出 D4 根本原因（Root Cause）。
+      1. 雙維歸因結構：必須明確拆分為兩點：
+         - 產生原因 (Occurrence Cause)：物理/化學上到底是甚麼治具公差、參數漂移或動作失誤導致了產品損壞。
+         - 流出原因 (Escape Cause)：FQC/AOI/IPQC 哪道防線漏檢，為什麼沒有在廠內攔截。
+      2. 剔除調查廢話：不允許出現「懷疑、經排查、推測」，直接給出最終客觀定論。
+
+      # Format / 格式
+      嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+      - "ack": 確認已鎖定物理根因與防線漏洞。
+      - "content": 最終文本，強制使用「1. 產生原因：...\n2. 流出原因：...」結構。行業黑話中英夾雜。控制在120字左右。
+
+      【輸入區】
+      問題描述: {{problem_description}}
+      圍堵對策: {{context_Fill_in_predicted_containment}}
+    use_rag: true
+    rag_tag: "faca_kb"
+
+  # D5 - Corrective Actions
+  - target_placeholder: "Fill_in_list_of_corrective_actions"
+    module: "Corrective"
+    module_label: "D5 - Corrective Actions (糾正措施)"
+    prompt: |
+      # Task / 任務
+      請針對【D4 根本原因中的「產生原因」】，撰寫 D5 永久糾正措施（Permanent Corrective Actions）。
+      1. 工程防呆 (Poka-yoke)：提出治具尺寸修改、增加感應器報警鎖機、優化機台程式或加工參數，從物理上根絕問題。
+      2. 治本導向：僅聚焦於出問題的這條線、這個機台與這個特定公差的修復。
+
+      # Format / 格式
+      嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+      - "ack": 確認已針對產生原因擬定防呆與設備修改。
+      - "content": 分步驟條列（1. 2. ...），強烈的祈使語氣（優化...、增加...、修改...），黑話中英夾雜。控制在100字左右。
+
+      【輸入區】
+      問題描述: {{problem_description}}
+      根本原因: {{context_Fill_in_predicted_causes}}
+    use_rag: true
+    rag_tag: "faca_kb"
+
+  # D6 - Preventive Actions
+  - target_placeholder: "Fill_in_list_of_preventive_actions"
+    module: "Corrective"
+    module_label: "D6 - Preventive Actions (預防措施)"
+    prompt: |
+      # Task / 任務
+      請針對【D4 根本原因中的「流出原因」】及系統弱點，撰寫 D6 系統預防措施（Preventive Actions）。
+      1. 橫向展開 (Horizontal Deployment / Read-Across)：強制排查全廠其他相關線體、相近機種，同類工站一併導入 D5 防呆機制。
+      2. 檢驗升級與標準化：將圍堵措施長效化（加入 AOI/視覺檢測項目）；修改標準作業書（SOP），製作單點課程（OPL）並對 QE/IPQC 盲測考核；加嚴 OQC 抽檢 AQL 標準。
+
+      # Format / 格式
+      嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+      - "ack": 確認已制定橫向平移與檢驗系統升級方案。
+      - "content": 分步驟條列（1. 2. ...），重度使用系統管理黑話（橫向展開, Read-Across, OPL, SOP, AOI, AQL, 盲測）。控制在100字左右。
+
+      【輸入區】
+      根本原因: {{context_Fill_in_predicted_causes}}
+      糾正措施: {{context_Fill_in_list_of_corrective_actions}}
+    use_rag: true
+    rag_tag: "faca_kb"
+
+# ── Section 4: Context engineering (dependency graph) ─────────────────────────
+context_graph:
+  generation_order:
+    - "Fill_in_predicted_containment"
+    - "Fill_in_predicted_causes"
+    - "Fill_in_list_of_corrective_actions"
+    - "Fill_in_list_of_preventive_actions"
+  dependencies:
+    "Fill_in_predicted_containment": []
+    "Fill_in_predicted_causes": ["Fill_in_predicted_containment"]
+    "Fill_in_list_of_corrective_actions": ["Fill_in_predicted_containment", "Fill_in_predicted_causes"]
+    "Fill_in_list_of_preventive_actions": ["Fill_in_predicted_containment", "Fill_in_predicted_causes"]
+  downstream:
+    "Fill_in_predicted_containment": ["Fill_in_predicted_causes", "Fill_in_list_of_corrective_actions", "Fill_in_list_of_preventive_actions"]
+    "Fill_in_predicted_causes": ["Fill_in_list_of_corrective_actions", "Fill_in_list_of_preventive_actions"]
+    "Fill_in_list_of_corrective_actions": []
+    "Fill_in_list_of_preventive_actions": []
+  first_turn_disclaimers:
+    - "Fill_in_predicted_causes"
+
+# ── Section 5: Closure (D7/D8 - user can chat with AI or fill manually) ────
+closure_tasks:
+  - target_placeholder: "Fill_in_verification"
+    label: "D7 - Verification (效果驗證)"
+    prompt: |
+      # Task / 任務
+      請根據【糾正措施】與【預防措施】，撰寫 D7 效果驗證方案（Verification Plan）。
+      1. 驗證方法：明確使用何種檢測手段（如 CCD/AOI 重檢、X-Ray、實配測試）確認改善有效性。
+      2. 驗證標準：給出可量化的判定基準（如不良率降至 0 以下、連續 3 批無再發）。
+      3. 追蹤節點：明確驗證時間與責任人。
+
+      # Format / 格式
+      嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+      - "ack": 確認驗證方案已涵蓋改善有效性與持續監控。
+      - "content": 分步驟條列，控制在100字左右。
+
+      【輸入區】
+      問題描述: {{problem_description}}
+    use_rag: true
+    rag_tag: "faca_kb"
+
+  - target_placeholder: "user input congratulate"
+    label: "D8 - Congratulate (團隊表彰)"
+    prompt: |
+      # Task / 任務
+      請根據本次異常處理的完整過程，生成一段團隊表彰詞（Congratulate the Team）。
+      1. 肯定團隊在圍堵、根因分析與改善對策中的協作與效率。
+      2. 總結本次改善成果與預防機制的建立。
+
+      # Format / 格式
+      嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+      - "ack": 確認已完成團隊表彰詞撰寫。
+      - "content": 正式表揚文本，控制在100字左右。
+
+      【輸入區】
+      問題描述: {{problem_description}}
+      團隊成員: {{team_info}}
+    use_rag: true
+    rag_tag: "faca_kb"

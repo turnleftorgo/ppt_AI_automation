@@ -2,7 +2,6 @@ template_id: "faca_report_v1"
 template_name: "FACA Report"
 description: "標準報告模板，包含Meta Data、問題描述、問題分析、根本原因、圍堵措施、改善對策"
 ppt_file_path: "FACA_Report.pptx"
-slide_index: 1
 
 system_prompt: |
  你現在是一位任職於頂尖消費性電子製造大廠（如 A 業務事業群）的資深失效分析（FA）與品質工程（QE）專家。你的職責是根據前線回報的異常資訊，撰寫經得起審查的 FACA (Failure Analysis and Corrective Action) 分析報告。
@@ -225,7 +224,22 @@ llm_tasks:
     use_rag: true
     rag_tag: "faca_kb"
 
-# ── Section 4: Font size configuration ────────────────────────────────────────
+# ── Section 4: Context engineering (dependency graph) ─────────────────────────
+context_graph:
+  generation_order: ["ISSUE_ANALYSIS", "ROOT_CAUSE", "CONTAINMENT", "CORRECTIVE"]
+  dependencies:
+    ISSUE_ANALYSIS: []
+    ROOT_CAUSE: ["ISSUE_ANALYSIS"]
+    CONTAINMENT: ["ISSUE_ANALYSIS", "ROOT_CAUSE"]
+    CORRECTIVE: ["ISSUE_ANALYSIS", "ROOT_CAUSE", "CONTAINMENT"]
+  downstream:
+    ISSUE_ANALYSIS: ["ROOT_CAUSE", "CONTAINMENT", "CORRECTIVE"]
+    ROOT_CAUSE: ["CONTAINMENT", "CORRECTIVE"]
+    CONTAINMENT: ["CORRECTIVE"]
+    CORRECTIVE: []
+  first_turn_disclaimers: ["ISSUE_ANALYSIS", "ROOT_CAUSE"]
+
+# ── Section 5: Font size configuration ────────────────────────────────────────
 font_config:
   title_size: 24      # 标题字号 (REPORT_TITLE, REPORT_SUBTITLE)
   content_size: 12    # 内容字号 (Meta Data + AI 生成内容)

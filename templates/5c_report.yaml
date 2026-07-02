@@ -1,0 +1,228 @@
+template_id: "5c_report_v1"
+template_name: "5C 异常处理报告"
+description: "5C异常处理报告模板，包含Characterize/Contain/Cause/Corrective/Closure五个阶段"
+ppt_file_path: "5C Report.pptx"
+
+# ── Section 1: User inputs (Characterize phase) ──────────────────────────────
+user_inputs:
+  - id: "radar_no"
+    label: "Radar# (雷达号)"
+    placeholder: "请输入Radar编号"
+    type: "text"
+    required: true
+
+  - id: "issue_title"
+    label: "Issue Title (报告主题)"
+    placeholder: "请简述异常主题"
+    type: "text"
+    required: true
+
+  - id: "report_date"
+    label: "Date (日期)"
+    type: "date"
+    required: true
+
+  - id: "issue_description"
+    label: "Description (问题描述)"
+    placeholder: "请详细描述异常情况"
+    type: "textarea"
+    required: true
+
+  - id: "champion"
+    label: "Champion (相关团队成员)"
+    placeholder: "请输入负责人姓名"
+    type: "text"
+
+# ── Section 2: Direct mappings (user input -> PPT placeholder, no AI) ───────
+direct_mappings:
+  - user_input_id: "radar_no"
+    target_placeholder: "TXT_RADAR_NO"
+  - user_input_id: "issue_title"
+    target_placeholder: "TXT_ISSUE_TITLE"
+  - user_input_id: "report_date"
+    target_placeholder: "TXT_DATE"
+  - user_input_id: "issue_description"
+    target_placeholder: "TXT_DESC"
+  - user_input_id: "champion"
+    target_placeholder: "TXT_CHAMPION"
+
+# ── Section 3: AI generation tasks (grouped by module) ──────────────────────
+llm_tasks:
+  # Contain module - Containment Actions
+  - target_placeholder: "Fill_in_list_of_containment_actions"
+    module: "Contain"
+    module_label: "Contain (圍堵對策)"
+    prompt: |
+      # Task / 任務
+      請根據【問題描述】，撰寫 Containment Actions（圍堵對策）。
+      1. 三維清查指令：嚴格區分「已出貨/客戶端(FAE隨線全檢/Sorting)」、「廠內庫存/扣貨(系統 Hold/鎖2D碼)」、「在製品 WIP(產線停線排查)」。
+      2. 檢驗標準規範：明確 Sorting 所需的手段（放大鏡/CCD/Go-NoGo夾具）。
+      3. 標識要求：全檢 OK 品外箱必須有專屬清晰標示，防止混料。
+
+      # Format / 格式
+      嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+      - "ack": 確認圍堵範圍與扣貨手段。
+      - "content": 條列式，動賓結構開頭，行業黑話中英夾雜。控制在120字左右。
+
+      【輸入區】
+      問題描述: {{issue_description}}
+      報告主題: {{issue_title}}
+    use_rag: true
+    rag_tag: "faca_kb"
+
+  # Cause module - Root Cause (專注物理產生原因)
+  - target_placeholder: "Fill_in_list_of_root_cause"
+    module: "Cause"
+    module_label: "Cause (物理根因分析)"
+    prompt: |
+      # Task / 任務
+      請根據前期分析推演，專注提煉出產品損壞的【Root Cause (產生根本原因)】。
+      1. 純物理/化學歸因：排除一切流程討論，只解答「產品在該機台/工站具體是受了甚麼物理外力、化學腐蝕、定位干涉或參數漂移造成 NG 的」。
+      2. 句式嚴謹：使用簡潔的「A狀態發生異常 -> 導致B現象 -> 造成C不良」的因果鏈條表達。
+      3. 剔除推測詞：禁止出現「懷疑、可能」，給出確定性判斷。
+
+      # Format / 格式
+      嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+      - "ack": 確認已提煉出核心物理/工藝根因。
+      - "content": 條列式說明，冷峻客觀，黑話豐富。控制在100字左右。
+
+      【輸入區】
+      問題描述: {{issue_description}}
+      報告主題: {{issue_title}}
+      圍堵對策: {{context_Fill_in_list_of_containment_actions}}
+    use_rag: true
+    rag_tag: "faca_kb"
+
+  # Cause module - Escape Cause (專注防線流出原因)
+  - target_placeholder: "Fill_in_list_of_escape_causes"
+    module: "Cause"
+    module_label: "Cause (流出原因分析)"
+    prompt: |
+      # Task / 任務
+      請單獨分析為什麼該不良未能及時攔截，撰寫【Escape Cause (流出/漏出原因)】。
+      1. 防線失效定位：明確指出具體是哪一道品管或自動化防線失效（如：AOI 視覺系統未錄入該 NG 特徵範本；FQC 目視檢驗有盲區；抽檢 AQL 頻率過低未能覆蓋偶發缺陷）。
+      2. 系統性歸因：指出量測設備、檢驗標準或 SOP 指導書的客觀缺失。
+
+      # Format / 格式
+      嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+      - "ack": 確認已鎖定品管漏檢與防線缺失節點。
+      - "content": 條列式，重度使用品管黑話（AOI, FQC, SPI, AQL, 檢驗範本, 目視檢驗）。控制在100字左右。
+
+      【輸入區】
+      問題描述: {{issue_description}}
+      報告主題: {{issue_title}}
+      圍堵對策: {{context_Fill_in_list_of_containment_actions}}
+    use_rag: true
+    rag_tag: "faca_kb"
+
+  # Corrective module - Corrective Actions (針對 Root Cause 治本)
+  - target_placeholder: "Fill_in_list_of_corrective_actions"
+    module: "Corrective"
+    module_label: "Corrective (永久糾正措施)"
+    prompt: |
+      # Task / 任務
+      請針對【Root Cause (物理根因)】，給出物理/設備層面的永久改善對策 (Corrective Action)。
+      1. 工程防呆化：提出修改治具避位、機台加裝壓力/位置感應器（Sensor）聯鎖停機、優化切削/點膠參數等物理防呆改造。
+      2. 具體可落地：明確改善的時間節點、工程手段，直接消除產生不良的根源。
+
+      # Format / 格式
+      嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+      - "ack": 確認針對物理根因擬定工程防呆改造。
+      - "content": 條列式，祈使動詞開頭，工程黑話濃郁。控制在100字左右。
+
+      【輸入區】
+      問題描述: {{issue_description}}
+      報告主題: {{issue_title}}
+      物理根因: {{context_Fill_in_list_of_root_cause}}
+      流出原因: {{context_Fill_in_list_of_escape_causes}}
+    use_rag: true
+    rag_tag: "faca_kb"
+
+  # Corrective module - Preventive Actions (針對 Escape Cause 橫向防範)
+  - target_placeholder: "Fill_in_list_of_preventive_actions"
+    module: "Corrective"
+    module_label: "Preventive (系統預防措施)"
+    prompt: |
+      # Task / 任務
+      請針對【Escape Cause (流出原因)】及系統缺失，給出長效系統預防措施 (Preventive Action)。
+      1. 橫向平移 (Read-Across)：強制清查廠內所有相似產線、其他專案機種，同步導入物理防呆與檢驗對策。
+      2. 檢驗升級與 QC 閘口：將該不良特徵正式納入 AOI 自動化檢測項目；QE 製作單點課程（OPL）對檢驗員進行培訓與盲測；出貨端 OQC 加嚴 AQL 抽樣標準（如由 0.65 降至 0.4）。
+
+      # Format / 格式
+      嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+      - "ack": 確認落實橫向展開與檢驗防線長效升級。
+      - "content": 條列式，管理與品管術語豐富（Read-Across, OPL, AOI, AQL, 盲測）。控制在100字左右。
+
+      【輸入區】
+      問題描述: {{issue_description}}
+      報告主題: {{issue_title}}
+      流出原因: {{context_Fill_in_list_of_escape_causes}}
+      糾正措施: {{context_Fill_in_list_of_corrective_actions}}
+    use_rag: true
+    rag_tag: "faca_kb"
+
+# ── Section 4: Context engineering (dependency graph) ─────────────────────────
+context_graph:
+  generation_order:
+    - "Fill_in_list_of_containment_actions"
+    - "Fill_in_list_of_root_cause"
+    - "Fill_in_list_of_escape_causes"
+    - "Fill_in_list_of_corrective_actions"
+    - "Fill_in_list_of_preventive_actions"
+  dependencies:
+    "Fill_in_list_of_containment_actions": []
+    "Fill_in_list_of_root_cause": ["Fill_in_list_of_containment_actions"]
+    "Fill_in_list_of_escape_causes": ["Fill_in_list_of_containment_actions"]
+    "Fill_in_list_of_corrective_actions": ["Fill_in_list_of_root_cause", "Fill_in_list_of_escape_causes"]
+    "Fill_in_list_of_preventive_actions": ["Fill_in_list_of_corrective_actions"]
+  downstream:
+    "Fill_in_list_of_containment_actions": ["Fill_in_list_of_root_cause", "Fill_in_list_of_escape_causes", "Fill_in_list_of_corrective_actions", "Fill_in_list_of_preventive_actions"]
+    "Fill_in_list_of_root_cause": ["Fill_in_list_of_corrective_actions", "Fill_in_list_of_preventive_actions"]
+    "Fill_in_list_of_escape_causes": ["Fill_in_list_of_corrective_actions", "Fill_in_list_of_preventive_actions"]
+    "Fill_in_list_of_corrective_actions": ["Fill_in_list_of_preventive_actions"]
+    "Fill_in_list_of_preventive_actions": []
+  first_turn_disclaimers:
+    - "Fill_in_list_of_root_cause"
+    - "Fill_in_list_of_escape_causes"
+
+# ── Section 5: Closure (user can chat with AI or fill manually) ─────────────
+closure_tasks:
+  - target_placeholder: "TXT_VERIFICATION"
+    label: "Verification (品質確認)"
+    prompt: |
+      # Task / 任務
+      請根據【糾正措施】與【預防措施】，撰寫品質確認方案（Verification Plan）。
+      1. 驗證方法：明確使用何種檢測手段確認改善有效性。
+      2. 驗證標準：給出可量化的判定基準（如不良率降至 0、連續批次無再發）。
+      3. 追蹤節點：明確驗證時間與責任人。
+
+      # Format / 格式
+      嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+      - "ack": 確認驗證方案已涵蓋改善有效性與持續監控。
+      - "content": 分步驟條列，控制在100字左右。
+
+      【輸入區】
+      問題描述: {{issue_description}}
+      報告主題: {{issue_title}}
+    use_rag: true
+    rag_tag: "faca_kb"
+
+  - target_placeholder: "TXT_REVIEW_RESULTS"
+    label: "Review Results (效果追蹤)"
+    prompt: |
+      # Task / 任務
+      請根據本次異常處理的完整過程，撰寫效果追蹤方案（Review Results）。
+      1. 追蹤指標與目標值：明確追蹤的 KPI（如不良率、再發率）與目標。
+      2. 追蹤週期：設定持續監控的時間範圍。
+      3. 效果評估標準：給出判定改善是否有效的量化基準。
+
+      # Format / 格式
+      嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+      - "ack": 確認效果追蹤方案已涵蓋量化指標與持續監控。
+      - "content": 分步驟條列，控制在100字左右。
+
+      【輸入區】
+      問題描述: {{issue_description}}
+      報告主題: {{issue_title}}
+    use_rag: true
+    rag_tag: "faca_kb"

@@ -222,8 +222,8 @@ async def generate(req: GenerateRequest):
 
     # 首次生成问题分析/根本原因时，注入推测免责声明
     history = [h.model_dump() for h in req.history]
-    first_turn_placeholders = {"ISSUE_ANALYSIS", "ROOT_CAUSE"}
-    is_first_turn = not history and req.placeholder_key in first_turn_placeholders
+    first_turn_disclaimers = set(cfg.get("context_graph", {}).get("first_turn_disclaimers", []))
+    is_first_turn = not history and req.placeholder_key in first_turn_disclaimers
     if is_first_turn:
         rendered_prompt = (
             "【提示】该内容为基于过往案例经验的推测，仅供参考，"
@@ -300,13 +300,7 @@ async def export_pptx(req: ExportRequest):
         title_parts.append("FACA")
         content_map["REPORT_TITLE"] = re.sub(r' +', ' ', title_parts[0] + "｜" + " ".join(title_parts[1:]))
 
-    # Export single slide (slide_index=1 since each YAML = one slide)
-    slide_index = cfg.get("slide_index", 1)
-
-    # Get font config from YAML template
-    font_config = cfg.get("font_config", {})
-
-    data = ppt_core.export_single_slide(ppt_path, slide_index, content_map, font_config)
+    data = ppt_core.fill_to_bytes(ppt_path, content_map)
     return StreamingResponse(
         BytesIO(data),
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
