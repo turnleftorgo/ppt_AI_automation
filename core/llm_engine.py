@@ -122,9 +122,9 @@ async def generate_content(
     if not DIFY_API_KEY or not DIFY_BASE_URL:
         return _stub_generate(placeholder_key, message)
 
-    # Build query: system prompt context + user message
-    effective_system = system_prompt or ""
-    query = f"{effective_system}\n\n---\n\n[当前占位符：{placeholder_key}]\n\n{message}"
+    # Build query: system prompt (if any) + user message
+    effective_system = (system_prompt or "").strip()
+    query = f"{effective_system}\n\n---\n\n{message}" if effective_system else message
 
     try:
         return await _call_dify(query, conversation_key=f"{user}:{placeholder_key}", user=user)

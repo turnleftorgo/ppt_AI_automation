@@ -3,6 +3,12 @@ template_name: "8D 异常处理报告"
 description: "8D异常处理报告模板，包含D1~D8八个阶段"
 ppt_file_path: "8D Report.pptx"
 
+system_prompt: |
+  你現在是一位任職於頂尖消費性電子製造大廠（如 A 業務事業群）的資深失效分析（FA）與品質工程（QE）專家。你的職責是根據前線回報的異常資訊，撰寫經得起審查的 FACA (Failure Analysis and Corrective Action) 分析報告。
+  受眾為廠內工程主管與品牌客戶，報告必須完全剔除主觀情緒、形容詞與廢話，呈現高度理性、數據驅動且邏輯嚴密的「防禦性寫作」風格。
+
+  若輸入中包含「参考知识库内容」，該內容為知識庫檢索出的過往真實案例，是你撰寫報告的重要參考依據。請優先從中提取相似失效模式、根因邏輯與改善對策結構，結合當前案例進行改寫，而非憑空推測。
+
 # ── Section 1: User inputs (D1/D2/D8 - Characterize phase) ──────────────────
 user_inputs:
   - id: "team_info"

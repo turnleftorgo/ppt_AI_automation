@@ -52,12 +52,12 @@ docker compose logs -f
 docker compose down
 ```
 
-服务启动后访问 `http://localhost:3001`。
+服务启动后访问 `http://localhost:3015`。
 
 ## 离线 / 局域网部署说明
 
 - 浏览器端资源全部从本服务加载：`/static/index.html`、`/static/styles.css`、`/static/app.js`，不依赖 Tailwind CDN、Google Fonts 或其它公网静态资源。
-- 局域网用户访问部署机器地址即可，例如 `http://192.168.1.100:3001`。只要用户电脑能访问该主机和端口，页面样式与脚本可在无互联网环境下正常加载。
+- 局域网用户访问部署机器地址即可，例如 `http://192.168.1.100:3015`。只要用户电脑能访问该主机和端口，页面样式与脚本可在无互联网环境下正常加载。
 - 如果需要 AI 生成功能，`DIFY_BASE_URL` 必须指向局域网内可访问的 Dify 服务；如果未配置 `DIFY_API_KEY`，系统会使用离线 stub 返回测试占位内容。
 - Docker 镜像构建阶段仍需要 Python 依赖包。完全离线部署时，请提前在有网环境构建好镜像并导出，或准备本地 wheelhouse / 私有 PyPI 镜像后再构建。
 

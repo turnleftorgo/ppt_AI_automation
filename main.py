@@ -217,19 +217,15 @@ async def generate(req: GenerateRequest):
 
     # Build system prompt (task-specific or YAML-level)
     system_prompt = task.get("system_prompt") or cfg.get("system_prompt", "")
-    if rag_context:
-        system_prompt += f"\n\n参考知识库内容：\n{rag_context}"
 
-    # 首次生成问题分析/根本原因时，注入推测免责声明
+    # RAG 参考资料拼到 prompt 尾部
+    if rag_context:
+        rendered_prompt += f"\n\n参考知识库内容：\n{rag_context}"
+
+    # 首次生成时的免责声明（仅通过 ack 在前端展示，不注入 prompt）
     history = [h.model_dump() for h in req.history]
     first_turn_disclaimers = set(cfg.get("context_graph", {}).get("first_turn_disclaimers", []))
     is_first_turn = not history and req.placeholder_key in first_turn_disclaimers
-    if is_first_turn:
-        rendered_prompt = (
-            "【提示】该内容为基于过往案例经验的推测，仅供参考，"
-            "建议用户结合实际情况进行修正或补充更多细节以获得更精准的分析。\n\n"
-            + rendered_prompt
-        )
 
     result = await generate_content(
         req.placeholder_key, rendered_prompt, history,
