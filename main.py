@@ -226,6 +226,22 @@ async def generate(req: GenerateRequest):
     is_multi_turn = user_turn_count > 0
     turn_index = user_turn_count  # 0=首轮, 1=第二次多轮, 2+=第三次及以后
 
+    # 多轮时追加意图判断指令
+    if turn_index >= 1:
+        intent_instruction = """
+## 输出规则
+
+1. **探讨方案**：用户在讨论思路、询问原因、探讨可能性、寻求解释、或意图不明确
+   - 关键词示例：为什么、怎么理解、你觉得、还有其他、如果...会怎样
+   - 输出格式：返回详细的 ack，不返回 content
+
+2. **强指令修改**：用户明确、直接、无歧义地要求修改报告内容
+   - 关键词示例：把...改成、删掉、加上、修改为、更新为
+   - 输出格式：返回简短 ack + content
+
+注意：如果用户同时讨论和要求修改，视为探讨方案，只返回 ack。不要输出你对用户意图的判断过程，直接按规则输出。"""
+        system_prompt += intent_instruction
+
     if not is_multi_turn:
         # 首轮：走 pipeline（若启用且有 RAG）或单次生成
         if pipeline_config.get("enabled") and rag_context:
@@ -257,31 +273,28 @@ async def generate(req: GenerateRequest):
                 session_id=req.session_id,
                 is_first_turn=True,
             )
-    elif turn_index == 1:
-        # 第二次多轮：渲染 multi_turn_prompt，注入 current_content（脱敏版）+ user_message
-        # 挂在 reason 会话上，让模型基于 reason 完整上下文 + 用户看到的脱敏版做改写
-        multi_turn_prompt_tpl = task.get("multi_turn_prompt")
-        if multi_turn_prompt_tpl:
-            mt_inputs = {
-                "current_content": req.current_content or "",
-                "user_message": req.message,
-            }
-            query = build_prompt(multi_turn_prompt_tpl, mt_inputs)
+    else:
+        # 第二次及以后的多轮对话
+        if turn_index == 1:
+            # 第二次多轮：渲染 multi_turn_prompt，注入 current_content（脱敏版）+ user_message
+            multi_turn_prompt_tpl = task.get("multi_turn_prompt")
+            if multi_turn_prompt_tpl:
+                mt_inputs = {
+                    "current_content": req.current_content or "",
+                    "user_message": req.message,
+                }
+                query = build_prompt(multi_turn_prompt_tpl, mt_inputs)
+            else:
+                query = req.message
         else:
-            # YAML 没配 multi_turn_prompt，退化为直接发用户消息
+            # 第三次及以后：直接发用户消息
             query = req.message
+
+        # 追加意图判断指令到消息末尾（强调）
+        query = f"{query}\n\n{intent_instruction}"
 
         result = await generate_content(
             req.placeholder_key, query, history,
-            system_prompt=system_prompt,
-            user=req.user.username,
-            session_id=req.session_id,
-            is_first_turn=False,
-        )
-    else:
-        # 第三次及以后：直接发用户消息，Dify 会话历史已有完整上下文
-        result = await generate_content(
-            req.placeholder_key, req.message, history,
             system_prompt=system_prompt,
             user=req.user.username,
             session_id=req.session_id,

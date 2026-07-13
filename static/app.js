@@ -6,6 +6,7 @@ let chatHistory = {};         // { target_placeholder: [{ role, content, fullCon
 let generatingSet = new Set();
 let ragContexts = [];         // RAG knowledge base retrieval results
 let currentSessionId = null;  // UUID per report; isolates Dify conversation + RAG cache across concurrent reports
+let lastBaseline = {};        // { placeholder_key: last_generated_content } 用于检测右侧编辑
 
 // Preview field registry: [{ key, label, source, group }]
 // source: 'userInputs' | 'chatHistory'
@@ -119,6 +120,7 @@ async function handleTemplateChange(templateId) {
   chatHistory = {};
   generatingSet.clear();
   ragContexts = [];
+  lastBaseline = {};
   currentSessionId = (crypto.randomUUID && crypto.randomUUID()) ||
     (Date.now().toString(36) + Math.random().toString(36).slice(2));
 
@@ -329,8 +331,8 @@ async function handleCharacterizeConfirm() {
   if (tasks.length === 0) return;
 
   btn.disabled = true;
-  btn.textContent = "生成中...";
-  statusEl.className = "text-sm text-blue-500";
+  btn.style.opacity = "0.4";
+  statusEl.className = "text-sm text-gray-400";
 
   // Serial generation in dependency order
   const taskMap = {};
@@ -380,6 +382,8 @@ async function handleCharacterizeConfirm() {
         fullContent: data.content || "",
         extractedData: data.extracted_data || "",
       });
+      // 更新基线，用于下次检测右侧编辑
+      lastBaseline[name] = data.content || "";
       // Capture RAG context for reference slide
       captureRagContext(data.rag_context);
       renderChatHistory(name);
@@ -405,7 +409,7 @@ async function handleCharacterizeConfirm() {
   }
 
   btn.disabled = false;
-  btn.textContent = "确认并生成";
+  btn.style.opacity = "1";
   statusEl.textContent = failed > 0
     ? `完成：${succeeded} 成功，${failed} 失败`
     : `全部完成 (${succeeded}/${genOrder.length})`;
@@ -432,8 +436,8 @@ async function handleGenerate(name) {
 
   generatingSet.add(name);
   btn.disabled = true;
-  btn.textContent = "生成中...";
-  statusEl.textContent = "正在生成...";
+  btn.style.opacity = "0.4";
+  statusEl.textContent = "正在生成中";
   statusEl.className = "text-xs text-blue-500";
 
   try {
@@ -441,6 +445,14 @@ async function handleGenerate(name) {
     // 取用户当前在占位符文本框里看到/编辑后的内容（脱敏版），供第二次多轮 prompt 注入
     const ta = document.querySelector(`textarea[data-source-key="${CSS.escape(name)}"]`);
     const current_content = ta ? ta.value : "";
+
+    // 检测右侧内容是否有手动编辑，如有则拼接到 prompt
+    let finalMessage = message;
+    const baseline = lastBaseline[name] || "";
+    if (current_content && baseline && current_content !== baseline) {
+      finalMessage = `用户已修改当前内容为：\n${current_content}\n\n用户消息：${message}`;
+    }
+
     const res = await fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -448,7 +460,7 @@ async function handleGenerate(name) {
         session_id: currentSessionId,
         template_id: currentConfig.template_id,
         placeholder_key: name,
-        message,
+        message: finalMessage,
         history: chatHistory[name],
         user_inputs: userInputs,
         context,
@@ -467,6 +479,8 @@ async function handleGenerate(name) {
         fullContent: data.content || "",
         extractedData: data.extracted_data || "",
       });
+      // 更新基线，用于下次检测右侧编辑
+      lastBaseline[name] = data.content || "";
       // Capture RAG context for reference slide
       captureRagContext(data.rag_context);
       renderChatHistory(name);
@@ -485,7 +499,7 @@ async function handleGenerate(name) {
   } finally {
     generatingSet.delete(name);
     btn.disabled = false;
-    btn.textContent = "发送";
+    btn.style.opacity = "1";
   }
 
   updatePreview();
@@ -756,9 +770,9 @@ function updatePreview() {
       value = (userInputs[field.sourceKey] || "").trim();
     } else if (field.source === "chatHistory") {
       const history = chatHistory[field.sourceKey] || [];
-      const lastAI = [...history].reverse().find(m => m.role === "assistant");
+      const lastAI = [...history].reverse().find(m => m.role === "assistant" && m.fullContent);
       if (lastAI) {
-        value = (lastAI.fullContent || lastAI.content || "").trim();
+        value = (lastAI.fullContent || "").trim();
       }
     }
 
