@@ -31,7 +31,7 @@
   </header>
 
   <!-- Main: Two-column layout -->
-  <main class="flex-1 grid grid-cols-2 overflow-hidden">
+  <main class="flex-1 grid grid-cols-2 overflow-hidden min-h-0">
 
     <!-- ═══ Left Panel: Workflow & Interaction ═══ -->
     <div id="leftPanel" class="overflow-y-auto p-6 space-y-6">
@@ -107,13 +107,11 @@
     </div>
 
     <!-- ═══ Right Panel: Live Preview ═══ -->
-    <div id="rightPanel" class="overflow-y-auto bg-gray-100 border-l border-gray-200 p-6 hidden">
-      <div class="max-w-2xl mx-auto">
-        <h2 class="text-lg font-semibold text-gray-700 mb-4">
-          <span id="previewTitle">Report Preview</span>
-        </h2>
-        <div id="previewTable"></div>
-      </div>
+    <div id="rightPanel" class="overflow-hidden bg-gray-100 border-l border-gray-200 p-6 hidden flex flex-col h-full min-h-0">
+      <h2 class="text-lg font-semibold text-gray-700 mb-4 shrink-0">
+        <span id="previewTitle">Report Preview</span>
+      </h2>
+      <div id="previewTable" class="flex-1 min-h-0 flex flex-col"></div>
     </div>
 
   </main>

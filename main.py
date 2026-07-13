@@ -6,6 +6,7 @@ import os
 import re
 from io import BytesIO
 
+from cachetools import TTLCache
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -36,27 +37,28 @@ ppt_core = PPTCore()
 
 # RAG context is produced during /api/generate but consumed during /api/export.
 # Keep a server-side copy so export does not depend only on the browser relaying it.
-rag_context_cache: dict[str, list[str]] = {}
+# Keyed by (template_id, session_id) so concurrent reports by the same user don't
+# cross-contaminate. TTL=1h, maxsize=200 bound memory.
+rag_context_cache: TTLCache = TTLCache(maxsize=200, ttl=3600)
 
 
-def _rag_cache_key(template_id: str, user_inputs: dict) -> str:
-    # 只用 template_id + issue_description 作为缓存 key
-    issue_desc = (user_inputs or {}).get("issue_description", "")
-    return f"{template_id}:{issue_desc}"
+def _rag_cache_key(template_id: str, session_id: str) -> str:
+    return f"{template_id}:{session_id}"
 
 
-def _remember_rag_context(template_id: str, user_inputs: dict, rag_context: str) -> None:
+def _remember_rag_context(template_id: str, session_id: str, rag_context: str) -> None:
     value = (rag_context or "").strip()
     if not value:
         return
-    key = _rag_cache_key(template_id, user_inputs)
-    cached = rag_context_cache.setdefault(key, [])
+    key = _rag_cache_key(template_id, session_id)
+    cached = rag_context_cache.get(key, [])
     if value not in cached:
         cached.append(value)
+    rag_context_cache[key] = cached
 
 
-def _cached_rag_context(template_id: str, user_inputs: dict) -> str:
-    return "\n\n".join(rag_context_cache.get(_rag_cache_key(template_id, user_inputs), []))
+def _cached_rag_context(template_id: str, session_id: str) -> str:
+    return "\n\n".join(rag_context_cache.get(_rag_cache_key(template_id, session_id), []))
 
 
 def is_gibberish(text: str) -> str | None:
@@ -206,12 +208,12 @@ async def generate(req: GenerateRequest):
     rendered_prompt = build_prompt(task["prompt"], render_inputs)
 
     # RAG context — 只检索一次，缓存后复用
-    rag_context = _cached_rag_context(req.template_id, req.user_inputs)
+    rag_context = _cached_rag_context(req.template_id, req.session_id)
     if not rag_context and task.get("use_rag"):
         issue_desc = req.user_inputs.get("issue_description", "")
         rag_query = f"{metadata} {issue_desc}".strip()
         rag_context = await get_rag_context(task.get("rag_tag", ""), rag_query)
-        _remember_rag_context(req.template_id, req.user_inputs, rag_context)
+        _remember_rag_context(req.template_id, req.session_id, rag_context)
 
     # Build system prompt (task-specific or YAML-level)
     system_prompt = task.get("system_prompt") or cfg.get("system_prompt", "")
@@ -241,7 +243,7 @@ async def generate(req: GenerateRequest):
                 steps=pipeline_config["steps"],
                 initial_vars=initial_vars,
                 system_prompt=system_prompt,
-                conversation_prefix=f"{req.user.username}:{req.placeholder_key}",
+                conversation_prefix=f"{req.user.username}:{req.session_id}:{req.placeholder_key}",
                 user=req.user.username,
             )
         else:
@@ -252,6 +254,7 @@ async def generate(req: GenerateRequest):
                 req.placeholder_key, rendered_prompt, history,
                 system_prompt=system_prompt,
                 user=req.user.username,
+                session_id=req.session_id,
                 is_first_turn=True,
             )
     elif turn_index == 1:
@@ -272,6 +275,7 @@ async def generate(req: GenerateRequest):
             req.placeholder_key, query, history,
             system_prompt=system_prompt,
             user=req.user.username,
+            session_id=req.session_id,
             is_first_turn=False,
         )
     else:
@@ -280,6 +284,7 @@ async def generate(req: GenerateRequest):
             req.placeholder_key, req.message, history,
             system_prompt=system_prompt,
             user=req.user.username,
+            session_id=req.session_id,
             is_first_turn=False,
         )
 
@@ -352,7 +357,7 @@ async def export_pptx(req: ExportRequest):
     # RAG 参考资料 → Related_text / Related_text_2 占位符（第二页）
     reference_placeholders = {"Related_text", "Related_text_2"}
     has_reference_slide = bool(reference_placeholders & set(ppt_core.scan_placeholders(ppt_path)["unique_placeholders"]))
-    rag_results = req.rag_results.strip() or _cached_rag_context(req.template_id, req.user_inputs)
+    rag_results = req.rag_results.strip() or _cached_rag_context(req.template_id, req.session_id)
     if rag_results:
         fragments = re.split(r'(?=【检索片段\s*\d+】)', rag_results)
         fragments = [f.strip() for f in fragments if f.strip()]

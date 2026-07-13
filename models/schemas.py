@@ -48,6 +48,7 @@ class ChatMessage(BaseModel):
 
 
 class GenerateRequest(BaseModel):
+    session_id: str = Field(..., description="Client-generated UUID per report session; isolates Dify conversation + RAG cache across concurrent reports")
     template_id: str = Field(..., description="YAML template ID")
     placeholder_key: str = Field(..., description="target_placeholder from llm_tasks")
     message: str = Field(..., description="Current user message")
@@ -78,6 +79,7 @@ class GenerateResponse(BaseModel):
 
 
 class ExportRequest(BaseModel):
+    session_id: str = Field(..., description="Client-generated UUID per report session; used to look up cached RAG context")
     template_id: str = Field(..., description="YAML template ID")
     user_inputs: Dict[str, str] = Field(
         default_factory=dict,

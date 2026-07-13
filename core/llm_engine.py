@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 import httpx
+from cachetools import TTLCache
 
 
 # ── Configuration (Dify API) ─────────────────────────────────────────────────
@@ -26,8 +27,10 @@ async def _get_http_client() -> httpx.AsyncClient:
     return _http_client
 
 
-# ── Conversation ID cache (per placeholder, for multi-turn) ──────────────────
-_conversation_ids: dict[str, str] = {}
+# ── Conversation ID cache (per user+session+placeholder, for multi-turn) ────
+# TTL=1d aligns with Dify's typical conversation retention; maxsize=500 bounds
+# memory. session_id in the key isolates concurrent reports by the same user.
+_conversation_ids: TTLCache = TTLCache(maxsize=500, ttl=86400)
 _conversation_lock = asyncio.Lock()
 
 
@@ -167,6 +170,7 @@ async def generate_content(
     history: list[dict],
     system_prompt: str = None,
     user: str = "",
+    session_id: str = "",
     is_first_turn: bool = True,
 ) -> dict:
     """
@@ -177,6 +181,8 @@ async def generate_content(
         message: Current user message
         history: Previous conversation [{ role: 'user'|'assistant', content: '...' }]
         system_prompt: Optional override for the default system prompt
+        user: User identifier
+        session_id: Per-report UUID; isolates Dify conversations across concurrent reports
         is_first_turn: 仅首轮为 True 时把 system_prompt 拼到 query 前面；
             多轮对话时 Dify 会话历史已含完整上下文，传 False 直接发 message，
             避免 system prompt 被当作新用户消息重复注入。
@@ -198,7 +204,11 @@ async def generate_content(
         query = message
 
     try:
-        return await _call_dify(query, conversation_key=f"{user}:{placeholder_key}", user=user)
+        return await _call_dify(
+            query,
+            conversation_key=f"{user}:{session_id}:{placeholder_key}",
+            user=user,
+        )
     except httpx.HTTPStatusError as e:
         error_body = e.response.text if e.response else str(e)
         return {

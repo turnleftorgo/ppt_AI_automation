@@ -32,6 +32,7 @@ textarea {
 }
 
 .h-screen { height: 100vh; }
+.h-full { height: 100%; }
 .flex { display: flex; }
 .grid { display: grid; }
 .hidden { display: none !important; }
@@ -54,6 +55,9 @@ textarea {
 .overflow-hidden { overflow: hidden; }
 .overflow-y-auto { overflow-y: auto; }
 .resize-y { resize: vertical; }
+.resize-none { resize: none; }
+.min-h-0 { min-height: 0; }
+.min-w-0 { min-width: 0; }
 .align-top { vertical-align: top; }
 .w-full { width: 100%; }
 .w-7 { width: 1.75rem; }
@@ -174,4 +178,66 @@ textarea {
     flex-direction: column;
     gap: 0.25rem;
   }
+}
+
+/* ── Preview Tabs ────────────────────────────────────────────────────────── */
+.preview-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+.preview-tab {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  color: #6b7280;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+  border-radius: 0.25rem 0.25rem 0 0;
+}
+.preview-tab[data-active="true"] {
+  color: #7e22ce;
+  border-bottom-color: #a855f7;
+  font-weight: 600;
+  background-color: #faf5ff;
+}
+.preview-tab:hover {
+  color: #7e22ce;
+}
+
+/* ── Regenerate button (per-field pipeline rerun) ────────────────────────── */
+.regen-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  background: transparent;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.25rem;
+  color: #6b7280;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+.regen-btn:hover {
+  color: #7e22ce;
+  border-color: #c084fc;
+  background-color: #faf5ff;
+}
+.regen-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.regen-btn:disabled:hover {
+  color: #6b7280;
+  border-color: #e5e7eb;
+  background-color: transparent;
 }

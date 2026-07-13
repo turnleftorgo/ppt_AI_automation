@@ -5,10 +5,17 @@ let userInputs = {};          // { input_id: value } from Characterize section
 let chatHistory = {};         // { target_placeholder: [{ role, content, fullContent? }] }
 let generatingSet = new Set();
 let ragContexts = [];         // RAG knowledge base retrieval results
+let currentSessionId = null;  // UUID per report; isolates Dify conversation + RAG cache across concurrent reports
 
 // Preview field registry: [{ key, label, source, group }]
 // source: 'userInputs' | 'chatHistory'
 let previewFields = [];
+
+// Tab-mode preview state
+// previewTabs: flat list of [{ sourceKey, key, label, source, hasExtract }] in display order (llm_tasks order, closure last)
+// activePreviewTab: sourceKey of the currently visible tab
+let previewTabs = [];
+let activePreviewTab = null;
 
 // ── Dependency graph for serial generation (read from YAML context_graph) ───
 function getContextGraph() {
@@ -112,6 +119,8 @@ async function handleTemplateChange(templateId) {
   chatHistory = {};
   generatingSet.clear();
   ragContexts = [];
+  currentSessionId = (crypto.randomUUID && crypto.randomUUID()) ||
+    (Date.now().toString(36) + Math.random().toString(36).slice(2));
 
   desc.textContent = currentConfig.description || `已选择：${currentConfig.template_name}`;
 
@@ -267,7 +276,21 @@ function renderAITask(container, task) {
       </button>
     </div>
 
-    <div id="status-${cssId(name)}" class="mt-2 text-xs text-gray-400"></div>
+    <div class="mt-2 flex items-center gap-2">
+      <span id="status-${cssId(name)}" class="text-xs text-gray-400"></span>
+      <button id="regen-${cssId(name)}" onclick="handleRegenerate('${escapeJs(name)}')"
+              class="regen-btn hidden"
+              title="重新生成此环节（重开 pipeline）"
+              aria-label="重新生成">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+          <path d="M21 3v5h-5"/>
+          <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+          <path d="M3 21v-5h5"/>
+        </svg>
+      </button>
+    </div>
   `;
 
   container.appendChild(div);
@@ -327,7 +350,7 @@ async function handleCharacterizeConfirm() {
     const statusTaskEl = document.getElementById(`status-${cssId(name)}`);
     if (statusTaskEl) {
       statusTaskEl.textContent = "正在生成...";
-      statusTaskEl.className = "mt-2 text-xs text-blue-500";
+      statusTaskEl.className = "text-xs text-blue-500";
     }
 
     const context = collectContext(name);
@@ -337,6 +360,7 @@ async function handleCharacterizeConfirm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          session_id: currentSessionId,
           template_id: currentConfig.template_id,
           placeholder_key: name,
           message: "请根据上述信息自动生成内容",
@@ -359,17 +383,21 @@ async function handleCharacterizeConfirm() {
       // Capture RAG context for reference slide
       captureRagContext(data.rag_context);
       renderChatHistory(name);
+      // Auto-switch preview tab to the field just generated
+      switchPreviewTab(name);
       updatePreview();
 
       if (statusTaskEl) {
         statusTaskEl.textContent = "生成完成";
-        statusTaskEl.className = "mt-2 text-xs text-green-600";
+        statusTaskEl.className = "text-xs text-green-600";
       }
+      const regenBtn = document.getElementById(`regen-${cssId(name)}`);
+      if (regenBtn) regenBtn.classList.remove("hidden");
       succeeded++;
     } catch (e) {
       if (statusTaskEl) {
         statusTaskEl.textContent = "生成失败: " + e.message;
-        statusTaskEl.className = "mt-2 text-xs text-red-500";
+        statusTaskEl.className = "text-xs text-red-500";
       }
       failed++;
       // fallback: upstream failed, continue to next task (context will be empty)
@@ -406,7 +434,7 @@ async function handleGenerate(name) {
   btn.disabled = true;
   btn.textContent = "生成中...";
   statusEl.textContent = "正在生成...";
-  statusEl.className = "mt-2 text-xs text-blue-500";
+  statusEl.className = "text-xs text-blue-500";
 
   try {
     const context = collectContext(name);
@@ -417,6 +445,7 @@ async function handleGenerate(name) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        session_id: currentSessionId,
         template_id: currentConfig.template_id,
         placeholder_key: name,
         message,
@@ -441,14 +470,18 @@ async function handleGenerate(name) {
       // Capture RAG context for reference slide
       captureRagContext(data.rag_context);
       renderChatHistory(name);
+      // Auto-switch preview tab to the field just updated
+      switchPreviewTab(name);
     }
 
     statusEl.textContent = "生成完成";
-    statusEl.className = "mt-2 text-xs text-green-600";
+    statusEl.className = "text-xs text-green-600";
+    const regenBtn = document.getElementById(`regen-${cssId(name)}`);
+    if (regenBtn) regenBtn.classList.remove("hidden");
 
   } catch (e) {
     statusEl.textContent = "生成失败: " + e.message;
-    statusEl.className = "mt-2 text-xs text-red-500";
+    statusEl.className = "text-xs text-red-500";
   } finally {
     generatingSet.delete(name);
     btn.disabled = false;
@@ -456,6 +489,72 @@ async function handleGenerate(name) {
   }
 
   updatePreview();
+}
+
+// ── Regenerate: re-run first-turn pipeline for a single field ─────────────────
+// Clears the field's own chatHistory so backend takes the first-turn branch
+// (re-runs extract→reason→sanitize pipeline). Upstream chatHistory is preserved,
+// so collectContext() still injects upstream AI outputs into the new prompt.
+// Downstream fields are NOT auto-regenerated — user must trigger them individually.
+async function handleRegenerate(name) {
+  const statusEl = document.getElementById(`status-${cssId(name)}`);
+  const regenBtn = document.getElementById(`regen-${cssId(name)}`);
+  const sendBtn = document.getElementById(`btn-${cssId(name)}`);
+
+  // Clear this field's history so backend treats it as a fresh first turn
+  chatHistory[name] = [];
+  renderChatHistory(name);
+
+  if (regenBtn) regenBtn.disabled = true;
+  if (sendBtn) sendBtn.disabled = true;
+  if (statusEl) {
+    statusEl.textContent = "正在重新生成...";
+    statusEl.className = "text-xs text-blue-500";
+  }
+
+  const context = collectContext(name);
+  try {
+    const res = await fetch("/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_id: currentSessionId,
+        template_id: currentConfig.template_id,
+        placeholder_key: name,
+        message: "请根据上述信息自动生成内容",
+        history: [],
+        user_inputs: userInputs,
+        context,
+        user: currentUser,
+      }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+
+    chatHistory[name].push({
+      role: "assistant",
+      content: data.ack || "",
+      fullContent: data.content || "",
+      extractedData: data.extracted_data || "",
+    });
+    captureRagContext(data.rag_context);
+    renderChatHistory(name);
+    switchPreviewTab(name);
+    updatePreview();
+
+    if (statusEl) {
+      statusEl.textContent = "生成完成";
+      statusEl.className = "text-xs text-green-600";
+    }
+  } catch (e) {
+    if (statusEl) {
+      statusEl.textContent = "生成失败: " + e.message;
+      statusEl.className = "text-xs text-red-500";
+    }
+  } finally {
+    if (regenBtn) regenBtn.disabled = false;
+    if (sendBtn) sendBtn.disabled = false;
+  }
 }
 
 // ── Render chat history ──────────────────────────────────────────────────────
@@ -506,75 +605,114 @@ function renderPreviewTable(config) {
   const container = document.getElementById("previewTable");
   container.innerHTML = "";
   previewFields = [];
+  previewTabs = [];
+  activePreviewTab = null;
 
-  let html = `<table class="w-full bg-white rounded-xl shadow overflow-hidden text-sm">
-    <thead>
-      <tr class="bg-gray-50 text-gray-600">
-        <th class="text-left px-4 py-3 font-semibold w-2/5">Field</th>
-        <th class="text-left px-4 py-3 font-semibold">Content</th>
-      </tr>
-    </thead>
-    <tbody>`;
-
-  // ── AI task groups (grouped by module) ──
+  // ── Collect tabs in display order: llm_tasks (in YAML order) first, closure last ──
   const llmTasks = config.llm_tasks || [];
-  if (llmTasks.length > 0) {
-    const modules = {};
-    for (const task of llmTasks) {
-      const mod = task.module || "default";
-      if (!modules[mod]) modules[mod] = { label: task.module_label || mod, tasks: [] };
-      modules[mod].tasks.push(task);
-    }
-
-    for (const [modKey, mod] of Object.entries(modules)) {
-      html += `<tr class="bg-purple-50"><td colspan="2" class="px-4 py-2 font-semibold text-purple-700">${escapeHtml(mod.label)}</td></tr>`;
-      for (const task of mod.tasks) {
-        const key = `preview-ai-${cssId(task.target_placeholder)}`;
-        const extractKey = `extract-${cssId(task.target_placeholder)}`;
-        previewFields.push({ key, label: task.target_placeholder, source: "chatHistory", sourceKey: task.target_placeholder });
-        html += `<tr class="border-t border-gray-100 align-top">
-          <td class="px-4 py-3 text-gray-600 font-mono text-xs">${escapeHtml(task.target_placeholder)}</td>
-          <td class="px-4 py-2">
-            <textarea id="${key}" rows="8" data-source="chatHistory" data-source-key="${escapeJs(task.target_placeholder)}"
-                      oninput="handlePreviewEdit(this)"
-                      class="w-full border border-gray-200 rounded px-2 py-1.5 text-sm resize-y
-                             focus:ring-2 focus:ring-purple-400 focus:border-transparent bg-white"
-                      placeholder="待生成..."></textarea>
-            <details id="${extractKey}" class="mt-2 hidden">
-              <summary class="cursor-pointer text-xs text-purple-600 hover:text-purple-800 select-none">
-                ▶ 资料整理
-              </summary>
-              <div class="mt-1 p-2 bg-purple-50 rounded text-xs text-gray-700 whitespace-pre-wrap max-h-48 overflow-y-auto"></div>
-            </details>
-          </td>
-        </tr>`;
-      }
-    }
+  for (const task of llmTasks) {
+    const key = `preview-ai-${cssId(task.target_placeholder)}`;
+    const tab = {
+      sourceKey: task.target_placeholder,
+      key,
+      label: task.module_label || task.target_placeholder,
+      source: "chatHistory",
+      hasExtract: true,
+      accent: "purple",
+    };
+    previewTabs.push(tab);
+    previewFields.push({
+      key,
+      label: task.target_placeholder,
+      source: "chatHistory",
+      sourceKey: task.target_placeholder,
+    });
   }
 
-  // ── Closure group ──
   const closureTasks = config.closure_tasks || [];
-  if (closureTasks.length > 0) {
-    html += `<tr class="bg-green-50"><td colspan="2" class="px-4 py-2 font-semibold text-green-700">Closure</td></tr>`;
-    for (const task of closureTasks) {
-      const key = `preview-closure-${cssId(task.target_placeholder)}`;
-      previewFields.push({ key, label: task.label || task.target_placeholder, source: "chatHistory", sourceKey: task.target_placeholder });
-      html += `<tr class="border-t border-gray-100 align-top">
-        <td class="px-4 py-3 text-gray-600">${escapeHtml(task.label || task.target_placeholder)}</td>
-        <td class="px-4 py-2">
-          <textarea id="${key}" rows="8" data-source="chatHistory" data-source-key="${escapeJs(task.target_placeholder)}"
-                    oninput="handlePreviewEdit(this)"
-                    class="w-full border border-gray-200 rounded px-2 py-1.5 text-sm resize-y
-                           focus:ring-2 focus:ring-green-400 focus:border-transparent bg-white"
-                    placeholder="待生成..."></textarea>
-        </td>
-      </tr>`;
-    }
+  for (const task of closureTasks) {
+    const key = `preview-closure-${cssId(task.target_placeholder)}`;
+    const tab = {
+      sourceKey: task.target_placeholder,
+      key,
+      label: task.label || task.target_placeholder,
+      source: "chatHistory",
+      hasExtract: false,
+      accent: "green",
+    };
+    previewTabs.push(tab);
+    previewFields.push({
+      key,
+      label: task.label || task.target_placeholder,
+      source: "chatHistory",
+      sourceKey: task.target_placeholder,
+    });
   }
 
-  html += `</tbody></table>`;
-  container.innerHTML = html;
+  if (previewTabs.length === 0) {
+    container.innerHTML = '<div class="text-gray-400 text-sm italic">无预览字段</div>';
+    return;
+  }
 
+  // ── Render tab bar + content container ──
+  const ringColor = "purple"; // default; per-tab override below via data-accent
+  container.innerHTML = `
+    <div class="preview-tabs" id="previewTabBar">
+      ${previewTabs.map(t => `
+        <button class="preview-tab"
+                data-source-key="${escapeJs(t.sourceKey)}"
+                data-accent="${escapeJs(t.accent)}"
+                data-active="false"
+                onclick="switchPreviewTab('${escapeJs(t.sourceKey)}')">
+          ${escapeHtml(t.label)}
+        </button>
+      `).join("")}
+    </div>
+    <div id="previewTabContent" class="flex-1 min-h-0 flex flex-col"></div>
+  `;
+
+  // Default to first tab
+  switchPreviewTab(previewTabs[0].sourceKey);
+}
+
+function switchPreviewTab(sourceKey) {
+  const tab = previewTabs.find(t => t.sourceKey === sourceKey);
+  if (!tab) return;
+  activePreviewTab = sourceKey;
+
+  // Update tab bar highlight
+  document.querySelectorAll(".preview-tab").forEach(btn => {
+    btn.dataset.active = btn.dataset.sourceKey === sourceKey ? "true" : "false";
+  });
+
+  // Render tab content: header + textarea (flex-1) + optional extract panel
+  const content = document.getElementById("previewTabContent");
+  const ringClass = tab.accent === "green" ? "focus:ring-green-400" : "focus:ring-purple-400";
+  content.innerHTML = `
+    <div class="flex flex-col h-full min-h-0">
+      <div class="mb-2 shrink-0 flex items-center gap-2">
+        <span class="px-2 py-0.5 ${tab.accent === "green" ? "bg-green-50 text-green-700" : "bg-purple-100 text-purple-700"} rounded text-xs font-mono">
+          ${escapeHtml(tab.sourceKey)}
+        </span>
+      </div>
+      <textarea id="${tab.key}"
+                data-source="${tab.source}"
+                data-source-key="${escapeJs(sourceKey)}"
+                oninput="handlePreviewEdit(this)"
+                class="flex-1 min-h-0 h-full w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none
+                       focus:ring-2 ${ringClass} focus:border-transparent bg-white font-mono"
+                placeholder="待生成..."></textarea>
+      ${tab.hasExtract ? `
+        <details id="extract-${cssId(sourceKey)}" class="mt-2 shrink-0">
+          <summary class="cursor-pointer text-xs text-purple-600 hover:text-purple-800 select-none">
+            ▶ 资料整理
+          </summary>
+          <div class="mt-1 p-2 bg-purple-50 rounded text-xs text-gray-700 whitespace-pre-wrap max-h-48 overflow-y-auto"></div>
+        </details>` : ""}
+    </div>
+  `;
+
+  // Fill in current value + extract panel
   updatePreview();
 }
 
@@ -679,6 +817,7 @@ async function handleExport() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        session_id: currentSessionId,
         template_id: currentConfig.template_id,
         user_inputs: userInputs,
         final_data: exportFinal,
