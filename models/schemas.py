@@ -44,6 +44,7 @@ class UserContext(BaseModel):
 class ChatMessage(BaseModel):
     role: str = Field(..., description="'user' or 'assistant'")
     content: str
+    fullContent: str = ""
 
 
 class GenerateRequest(BaseModel):
@@ -62,6 +63,12 @@ class GenerateRequest(BaseModel):
     user: UserContext = Field(
         default_factory=UserContext,
         description="User identity from URL query params",
+    )
+    current_content: str = Field(
+        default="",
+        description="User-visible (sanitized) content currently shown in the placeholder textarea. "
+                    "Injected into multi_turn_prompt on the first follow-up turn so the model can "
+                    "anchor its rewrite on what the user actually sees, not the raw reason output.",
     )
 
 

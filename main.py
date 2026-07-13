@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from core.ppt_core import PPTCore
-from core.llm_engine import generate_content
+from core.llm_engine import generate_content, execute_pipeline
 from core.yaml_loader import YAMLLoader
 from core.prompt_builder import build_prompt
 from core.rag_stub import get_rag_context
@@ -40,11 +40,9 @@ rag_context_cache: dict[str, list[str]] = {}
 
 
 def _rag_cache_key(template_id: str, user_inputs: dict) -> str:
-    payload = {
-        "template_id": template_id,
-        "user_inputs": user_inputs or {},
-    }
-    return json.dumps(payload, sort_keys=True, ensure_ascii=False)
+    # 只用 template_id + issue_description 作为缓存 key
+    issue_desc = (user_inputs or {}).get("issue_description", "")
+    return f"{template_id}:{issue_desc}"
 
 
 def _remember_rag_context(template_id: str, user_inputs: dict, rag_context: str) -> None:
@@ -207,9 +205,9 @@ async def generate(req: GenerateRequest):
             render_inputs[f"context_{k}"] = v
     rendered_prompt = build_prompt(task["prompt"], render_inputs)
 
-    # RAG context — 只传关键信息给知识库检索，不传完整 prompt
-    rag_context = ""
-    if task.get("use_rag"):
+    # RAG context — 只检索一次，缓存后复用
+    rag_context = _cached_rag_context(req.template_id, req.user_inputs)
+    if not rag_context and task.get("use_rag"):
         issue_desc = req.user_inputs.get("issue_description", "")
         rag_query = f"{metadata} {issue_desc}".strip()
         rag_context = await get_rag_context(task.get("rag_tag", ""), rag_query)
@@ -218,31 +216,113 @@ async def generate(req: GenerateRequest):
     # Build system prompt (task-specific or YAML-level)
     system_prompt = task.get("system_prompt") or cfg.get("system_prompt", "")
 
-    # RAG 参考资料拼到 prompt 尾部
-    if rag_context:
-        rendered_prompt += f"\n\n参考知识库内容：\n{rag_context}"
-
-    # 首次生成时的免责声明（仅通过 ack 在前端展示，不注入 prompt）
     history = [h.model_dump() for h in req.history]
-    first_turn_disclaimers = set(cfg.get("context_graph", {}).get("first_turn_disclaimers", []))
-    is_first_turn = not history and req.placeholder_key in first_turn_disclaimers
 
-    result = await generate_content(
-        req.placeholder_key, rendered_prompt, history,
-        system_prompt=system_prompt,
-        user=req.user.username,
-    )
+    # 判断是否走 pipeline
+    pipeline_config = task.get("pipeline", {})
+    user_turn_count = sum(1 for h in req.history if h.role == "user")
+    is_multi_turn = user_turn_count > 0
+    turn_index = user_turn_count  # 0=首轮, 1=第二次多轮, 2+=第三次及以后
 
-    # 首次生成时，强制在 ack 中附加免责声明
-    if is_first_turn:
-        disclaimer = "以上为基于过往经验的推测性分析，仅供参考。如您有更多现场细节，随时告诉我，我可以进一步完善。"
-        result["ack"] = disclaimer
+    if not is_multi_turn:
+        # 首轮：走 pipeline（若启用且有 RAG）或单次生成
+        if pipeline_config.get("enabled") and rag_context:
+            initial_vars = {
+                "rag_context": rag_context,
+                "context_background": _build_context_background(render_inputs, req.context),
+                "module_label": task.get("module_label", task.get("module", "")),
+                # 注入用户输入变量
+                **{k: v for k, v in render_inputs.items() if not k.startswith("context_")},
+                # 注入上游上下文变量
+                **{f"context_{k}": v for k, v in (req.context or {}).items() if v and v.strip()},
+            }
+
+            result = await execute_pipeline(
+                steps=pipeline_config["steps"],
+                initial_vars=initial_vars,
+                system_prompt=system_prompt,
+                conversation_prefix=f"{req.user.username}:{req.placeholder_key}",
+                user=req.user.username,
+            )
+        else:
+            # 无 pipeline 的首轮：发完整 prompt
+            if rag_context:
+                rendered_prompt += f"\n\n参考知识库内容：\n{rag_context}"
+            result = await generate_content(
+                req.placeholder_key, rendered_prompt, history,
+                system_prompt=system_prompt,
+                user=req.user.username,
+                is_first_turn=True,
+            )
+    elif turn_index == 1:
+        # 第二次多轮：渲染 multi_turn_prompt，注入 current_content（脱敏版）+ user_message
+        # 挂在 reason 会话上，让模型基于 reason 完整上下文 + 用户看到的脱敏版做改写
+        multi_turn_prompt_tpl = task.get("multi_turn_prompt")
+        if multi_turn_prompt_tpl:
+            mt_inputs = {
+                "current_content": req.current_content or "",
+                "user_message": req.message,
+            }
+            query = build_prompt(multi_turn_prompt_tpl, mt_inputs)
+        else:
+            # YAML 没配 multi_turn_prompt，退化为直接发用户消息
+            query = req.message
+
+        result = await generate_content(
+            req.placeholder_key, query, history,
+            system_prompt=system_prompt,
+            user=req.user.username,
+            is_first_turn=False,
+        )
+    else:
+        # 第三次及以后：直接发用户消息，Dify 会话历史已有完整上下文
+        result = await generate_content(
+            req.placeholder_key, req.message, history,
+            system_prompt=system_prompt,
+            user=req.user.username,
+            is_first_turn=False,
+        )
 
     # 返回 RAG 检索结果，前端可存储并在导出时传回
     if rag_context:
         result["rag_context"] = rag_context
 
     return result
+
+
+def _build_context_background(render_inputs: dict, context: dict | None) -> str:
+    """
+    拼接上下文背景：用户输入 + 上游生成结果。
+
+    Args:
+        render_inputs: 用户输入（含 metadata dict）
+        context: 上游环节的生成结果 {placeholder_key: content}
+
+    Returns:
+        拼接后的上下文文本
+    """
+    parts = []
+
+    # 用户输入（排除 context_ 前缀和 metadata dict）
+    for k, v in render_inputs.items():
+        if k.startswith("context_") or k == "metadata":
+            continue
+        if v and isinstance(v, str) and v.strip():
+            parts.append(f"【{k}】: {v}")
+
+    # metadata dict
+    metadata = render_inputs.get("metadata", {})
+    if metadata:
+        meta_str = " | ".join(f"{k}: {v}" for k, v in metadata.items() if v)
+        if meta_str:
+            parts.append(f"【Meta Data】: {meta_str}")
+
+    # 上游生成结果
+    for k, v in (context or {}).items():
+        if v and v.strip():
+            parts.append(f"【{k}】:\n{v}")
+
+    return "\n\n".join(parts)
 
 
 @app.post("/api/export")

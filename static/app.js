@@ -354,6 +354,7 @@ async function handleCharacterizeConfirm() {
         role: "assistant",
         content: data.ack || "",
         fullContent: data.content || "",
+        extractedData: data.extracted_data || "",
       });
       // Capture RAG context for reference slide
       captureRagContext(data.rag_context);
@@ -409,6 +410,9 @@ async function handleGenerate(name) {
 
   try {
     const context = collectContext(name);
+    // 取用户当前在占位符文本框里看到/编辑后的内容（脱敏版），供第二次多轮 prompt 注入
+    const ta = document.querySelector(`textarea[data-source-key="${CSS.escape(name)}"]`);
+    const current_content = ta ? ta.value : "";
     const res = await fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -420,6 +424,7 @@ async function handleGenerate(name) {
         user_inputs: userInputs,
         context,
         user: currentUser,
+        current_content,
       }),
     });
     if (!res.ok) throw new Error(await res.text());
@@ -431,6 +436,7 @@ async function handleGenerate(name) {
         role: "assistant",
         content: data.ack || "",
         fullContent: data.content || "",
+        extractedData: data.extracted_data || "",
       });
       // Capture RAG context for reference slide
       captureRagContext(data.rag_context);
@@ -440,54 +446,6 @@ async function handleGenerate(name) {
     statusEl.textContent = "生成完成";
     statusEl.className = "mt-2 text-xs text-green-600";
 
-    // Cascade: regenerate downstream tasks
-    for (const downstreamKey of (getContextGraph().downstream[name] || [])) {
-      const dsStatusEl = document.getElementById(`status-${cssId(downstreamKey)}`);
-      if (dsStatusEl) {
-        dsStatusEl.textContent = "上游更新，正在重新生成...";
-        dsStatusEl.className = "mt-2 text-xs text-blue-500";
-      }
-
-      const ctx = collectContext(downstreamKey);
-      try {
-        const dsRes = await fetch("/api/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            template_id: currentConfig.template_id,
-            placeholder_key: downstreamKey,
-            message: "上游内容已更新，请重新生成",
-            history: [],
-            user_inputs: userInputs,
-            context: ctx,
-            user: currentUser,
-          }),
-        });
-        if (!dsRes.ok) throw new Error(await dsRes.text());
-        const dsData = await dsRes.json();
-
-        if (!chatHistory[downstreamKey]) chatHistory[downstreamKey] = [];
-        chatHistory[downstreamKey].push({
-          role: "assistant",
-          content: dsData.ack || "",
-          fullContent: dsData.content || "",
-        });
-        // Capture RAG context for reference slide
-        captureRagContext(dsData.rag_context);
-        renderChatHistory(downstreamKey);
-        updatePreview();
-
-        if (dsStatusEl) {
-          dsStatusEl.textContent = "级联更新完成";
-          dsStatusEl.className = "mt-2 text-xs text-green-600";
-        }
-      } catch (e) {
-        if (dsStatusEl) {
-          dsStatusEl.textContent = "级联更新失败: " + e.message;
-          dsStatusEl.className = "mt-2 text-xs text-red-500";
-        }
-      }
-    }
   } catch (e) {
     statusEl.textContent = "生成失败: " + e.message;
     statusEl.className = "mt-2 text-xs text-red-500";
@@ -572,6 +530,7 @@ function renderPreviewTable(config) {
       html += `<tr class="bg-purple-50"><td colspan="2" class="px-4 py-2 font-semibold text-purple-700">${escapeHtml(mod.label)}</td></tr>`;
       for (const task of mod.tasks) {
         const key = `preview-ai-${cssId(task.target_placeholder)}`;
+        const extractKey = `extract-${cssId(task.target_placeholder)}`;
         previewFields.push({ key, label: task.target_placeholder, source: "chatHistory", sourceKey: task.target_placeholder });
         html += `<tr class="border-t border-gray-100 align-top">
           <td class="px-4 py-3 text-gray-600 font-mono text-xs">${escapeHtml(task.target_placeholder)}</td>
@@ -581,6 +540,12 @@ function renderPreviewTable(config) {
                       class="w-full border border-gray-200 rounded px-2 py-1.5 text-sm resize-y
                              focus:ring-2 focus:ring-purple-400 focus:border-transparent bg-white"
                       placeholder="待生成..."></textarea>
+            <details id="${extractKey}" class="mt-2 hidden">
+              <summary class="cursor-pointer text-xs text-purple-600 hover:text-purple-800 select-none">
+                ▶ 资料整理
+              </summary>
+              <div class="mt-1 p-2 bg-purple-50 rounded text-xs text-gray-700 whitespace-pre-wrap max-h-48 overflow-y-auto"></div>
+            </details>
           </td>
         </tr>`;
       }
@@ -660,6 +625,21 @@ function updatePreview() {
     }
 
     el.value = value;
+
+    // 更新资料整理折叠面板（扫描全历史，找任意一条有 extractedData 的消息）
+    if (field.source === "chatHistory") {
+      const extractEl = document.getElementById(`extract-${cssId(field.sourceKey)}`);
+      if (extractEl) {
+        const history = chatHistory[field.sourceKey] || [];
+        const found = [...history].reverse().find(m => m.role === "assistant" && m.extractedData);
+        if (found) {
+          extractEl.classList.remove("hidden");
+          extractEl.querySelector("div").textContent = found.extractedData;
+        } else {
+          extractEl.classList.add("hidden");
+        }
+      }
+    }
   }
 }
 

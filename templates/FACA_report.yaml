@@ -1,266 +1,665 @@
-template_id: "faca_report_v1"
-template_name: "FACA Report"
-description: "標準報告模板，包含Meta Data、問題描述、問題分析、根本原因、圍堵措施、改善對策"
-ppt_file_path: "FACA_Report.pptx"
+template_id: faca_report_v1
+template_name: FACA Report
+description: FACA 報告模板（含參考資料），第二頁展示 RAG 知識庫檢索結果作為參考依據
+ppt_file_path: FACA_Report.pptx
+system_prompt: '你現在是一位任職於頂尖消費性電子製造大廠（如 A 業務事業群）的資深失效分析（FA）與品質工程（QE）專家。你的職責是根據前線回報的異常資訊，撰寫經得起審查的
+  FACA (Failure Analysis and Corrective Action) 分析報告。
 
-system_prompt: |
- 你現在是一位任職於頂尖消費性電子製造大廠（如 A 業務事業群）的資深失效分析（FA）與品質工程（QE）專家。你的職責是根據前線回報的異常資訊，撰寫經得起審查的 FACA (Failure Analysis and Corrective Action) 分析報告。
- 受眾為廠內工程主管與品牌客戶，報告必須完全剔除主觀情緒、形容詞與廢話，呈現高度理性、數據驅動且邏輯嚴密的「防禦性寫作」風格。
+  受眾為廠內工程主管與品牌客戶，報告必須完全剔除主觀情緒、形容詞與廢話，呈現高度理性、數據驅動且邏輯嚴密的「防禦性寫作」風格。
+
 
   若輸入中包含「参考知识库内容」，該內容為知識庫檢索出的過往真實案例，是你撰寫報告的重要參考依據。請優先從中提取相似失效模式、根因邏輯與改善對策結構，結合當前案例進行改寫，而非憑空推測。
 
-# ── Section 1: User inputs (Characterize phase) ──────────────────────────────
+  '
 user_inputs:
-  - id: "file_name"
-    label: "檔案名"
-    placeholder: "请输入档案名称"
-    type: "text"
-    group: "metadata"
-    required: true
-
-  - id: "ipad_model"
-    label: "iPad機型"
-    placeholder: "如 Air、Pro"
-    type: "text"
-    group: "metadata"
-    required: true
-
-  - id: "build"
-    label: "Build"
-    placeholder: "如 MP、EVT、DVT"
-    type: "text"
-    group: "metadata"
-    required: true
-
-  - id: "ipad_type"
-    label: "iPad機種"
-    placeholder: "如 J70x、J51x"
-    type: "text"
-    group: "metadata"
-    required: true
-
-  - id: "process"
-    label: "製程"
-    placeholder: "如 組裝（Assy）、SMT"
-    type: "text"
-    group: "metadata"
-    required: true
-
-  - id: "reporter"
-    label: "報告人"
-    placeholder: "请输入报告人姓名"
-    type: "text"
-    group: "metadata"
-
-  - id: "keywords"
-    label: "關鍵字"
-    placeholder: "请输入关键字"
-    type: "text"
-    group: "metadata"
-
-  - id: "issue_description"
-    label: "問題描述"
-    placeholder: "请详细描述问题现象、发现时间、影响范围等"
-    type: "textarea"
-    required: true
-
-# ── Section 2: Direct mappings (user input -> PPT placeholder, no AI) ───────
+- id: file_name
+  label: 檔案名
+  placeholder: 请输入档案名称
+  type: text
+  group: metadata
+  required: true
+- id: ipad_model
+  label: iPad機型
+  placeholder: 如 Air、Pro
+  type: text
+  group: metadata
+  required: true
+- id: build
+  label: Build
+  placeholder: 如 MP、EVT、DVT
+  type: text
+  group: metadata
+  required: true
+- id: ipad_type
+  label: iPad機種
+  placeholder: 如 J70x、J51x
+  type: text
+  group: metadata
+  required: true
+- id: process
+  label: 製程
+  placeholder: 如 組裝（Assy）、SMT
+  type: text
+  group: metadata
+  required: true
+- id: reporter
+  label: 報告人
+  placeholder: 请输入报告人姓名
+  type: text
+  group: metadata
+- id: keywords
+  label: 關鍵字
+  placeholder: 请输入关键字
+  type: text
+  group: metadata
+- id: issue_description
+  label: 問題描述
+  placeholder: 请详细描述问题现象、发现时间、影响范围等
+  type: textarea
+  required: true
 direct_mappings:
-  - user_input_id: "file_name"
-    target_placeholder: "FILE_NAME"
-  - user_input_id: "ipad_model"
-    target_placeholder: "IPAD_MODEL"
-  - user_input_id: "build"
-    target_placeholder: "BUILD"
-  - user_input_id: "ipad_type"
-    target_placeholder: "IPAD_TYPE"
-  - user_input_id: "process"
-    target_placeholder: "PROCESS"
-  - user_input_id: "reporter"
-    target_placeholder: "REPORTER"
-  - user_input_id: "keywords"
-    target_placeholder: "KEYWORDS"
-  - user_input_id: "issue_description"
-    target_placeholder: "ISSUE_DESCRIPTION"
-
-# ── Section 3: AI generation tasks ──────────────────────────────────────────
+- user_input_id: file_name
+  target_placeholder: FILE_NAME
+- user_input_id: ipad_model
+  target_placeholder: IPAD_MODEL
+- user_input_id: build
+  target_placeholder: BUILD
+- user_input_id: ipad_type
+  target_placeholder: IPAD_TYPE
+- user_input_id: process
+  target_placeholder: PROCESS
+- user_input_id: reporter
+  target_placeholder: REPORTER
+- user_input_id: keywords
+  target_placeholder: KEYWORDS
+- user_input_id: issue_description
+  target_placeholder: ISSUE_DESCRIPTION
 llm_tasks:
-  - target_placeholder: "ISSUE_ANALYSIS"
-    module: "問題分析"
-    module_label: "問題分析"
-    prompt: |
-      # Task / 任務 (Task)
-      請根據我提供的【Meta Data 元數據】與【問題描述】，推理並撰寫對應的【問題分析】。
-      在撰寫時，你必須嚴格遵守以下邏輯與推演限制：
+- target_placeholder: ISSUE_ANALYSIS
+  module: 問題分析
+  module_label: 問題分析
+  prompt: "# Task / 任務 (Task)\n請根據我提供的【Meta Data 元數據】與【問題描述】，推理並撰寫對應的【問題分析】。\n在撰寫時，你必須嚴格遵守以下邏輯與推演限制：\n\
+    \n1. 提取溯源：分析的第一步，必須是利用描述中的 SN/DQR 碼「虛擬查詢」過站記錄，給出具體的（虛擬但合理的）生產時間、線體與機台編號。\n2. 對齊製程：如果元數據顯示為\
+    \ CNC（金加），排查重點必須圍繞機台首件、刀具（換刀/斷刀記錄）、CMM/OMM 檢測；如果為 Assy（組裝），重點必須是治具/載具磨損、點膠參數（膠量/氣壓/UV固化）、CCD\
+    \ 視覺抓邊或人員重工（Rework）記錄。\n3. 判定共性：根據描述中的不良率（F/R），若是高頻批量不良，推導為設備/治具異常或來料問題；若為極低頻，推導為偶發操作失誤、漏檢或單次重工不良。\n\
+    4. 物理推演：用純客觀的工程視角，簡述該不良形態在該工段是如何發生的（如：治具定位柱鬆動導致偏位、切削液與陽極藥水反應導致腐蝕）。\n\n# Format\
+    \ / 格式 (Format)\n每次回覆你必須且只能返回一個嚴格的 JSON 對象，包含兩個字段。絕對不要輸出任何其他內容、解釋或 markdown 標記（如\
+    \ ```json）：\n- \"ack\": 簡短回應（不超過 50 字），確認你理解了用戶的意思及本次分析的製程重點。\n- \"content\":\
+    \ 更新後的【問題分析】最終文本內容。請使用 \\n 處理換行以確保 JSON 格式合法。\n\n【content 字段的寫作要求】\n- 語言風格：語言精煉、去個人化（不使用「我們」、「大概」等詞）。動賓結構開頭（如「查詢...」、「排查...」、「確認...」）。重度使用行業黑話與中英夾雜（如\
+    \ Trace, SN, CNC, Assy, CCD, NG, OK, Pass, Rework, 治具, 首件）。\n- 結構模板：請拆分成編號步驟（1.\
+    \ 2. 3. ...），或使用「一、物料信息排查 / 二、製程排查」的層級。\n- 內容約束：確保分析內容與元數據的製程、問題描述的失效模式強相關，邏輯閉環。\n\
+    \n示例：\n{\"ack\": \"好的，已根據Assy製程特性與低不良率，排查了磁鐵點膠機台與治具殘膠情況。\", \"content\": \"1.查詢不良物料SN過站記錄，均為M1線10/28生產物料，全製程一次過站，無重工記錄。\\\
+    n2.排查磁鐵點膠機CCD圖片，點膠時磁鐵已偏位，與客訴不良一致。\\n3.排查裝配治具，發現偏位磁鐵對應的載具存在殘膠，影響裝配尺寸導致NG。\"}\n\n\
+    【輸入區】\n Meta Data: {{metadata}}\n問題描述: {{issue_description}}\n"
+  use_rag: true
+  rag_tag: faca_kb
+  multi_turn_prompt: "# Task / 多輪調整\n\n你剛才在 reason 步驟生成的【問題分析】已經過 sanitize 脫敏處理，用戶當前在介面上看到並要調整的內容如下。請基於你 reason 步驟的完整上下文記憶（含 #資料分析 與 #AI推理 原文）理解用戶意圖，但改寫的對象是「用戶當前看到的脫敏版內容」，而不是你 reason 步驟的原文。\n\n## 用戶當前看到的內容（脫敏版）\n{{current_content}}\n\n## 用戶的新指令\n{{user_message}}\n\n## 規則\n1. 保留脫敏佔位符風格（【日期】【線體編號】【SN碼】【刀具型號】【數量】【不良率】【批次號】等），不要還原成具體數據\n2. 遵守原 reason 步驟的寫作風格與結構要求（動賓結構開頭、編號步驟、行業黑話中英夾雜）\n3. 只改寫用戶指令涉及的部分，其餘保持不變\n\n## 輸出格式\n嚴格返回 JSON 對象，絕不輸出 markdown 標記：\n- \"ack\": 簡短回應（不超過 50 字）\n- \"content\": 改寫後的【問題分析】文本，使用 \\n 處理換行\n"
+  pipeline:
+    enabled: true
+    steps:
+    - name: extract
+      prompt: '# Task / 資料提取
 
-      1. 提取溯源：分析的第一步，必須是利用描述中的 SN/DQR 碼「虛擬查詢」過站記錄，給出具體的（虛擬但合理的）生產時間、線體與機台編號。
-      2. 對齊製程：如果元數據顯示為 CNC（金加），排查重點必須圍繞機台首件、刀具（換刀/斷刀記錄）、CMM/OMM 檢測；如果為 Assy（組裝），重點必須是治具/載具磨損、點膠參數（膠量/氣壓/UV固化）、CCD 視覺抓邊或人員重工（Rework）記錄。
-      3. 判定共性：根據描述中的不良率（F/R），若是高頻批量不良，推導為設備/治具異常或來料問題；若為極低頻，推導為偶發操作失誤、漏檢或單次重工不良。
-      4. 物理推演：用純客觀的工程視角，簡述該不良形態在該工段是如何發生的（如：治具定位柱鬆動導致偏位、切削液與陽極藥水反應導致腐蝕）。
-
-      # Format / 格式 (Format)
-      每次回覆你必須且只能返回一個嚴格的 JSON 對象，包含兩個字段。絕對不要輸出任何其他內容、解釋或 markdown 標記（如 ```json）：
-      - "ack": 簡短回應（不超過 50 字），確認你理解了用戶的意思及本次分析的製程重點。
-      - "content": 更新後的【問題分析】最終文本內容。請使用 \n 處理換行以確保 JSON 格式合法。
-
-      【content 字段的寫作要求】
-      - 語言風格：語言精煉、去個人化（不使用「我們」、「大概」等詞）。動賓結構開頭（如「查詢...」、「排查...」、「確認...」）。重度使用行業黑話與中英夾雜（如 Trace, SN, CNC, Assy, CCD, NG, OK, Pass, Rework, 治具, 首件）。
-      - 結構模板：請拆分成編號步驟（1. 2. 3. ...），或使用「一、物料信息排查 / 二、製程排查」的層級。
-      - 內容約束：確保分析內容與元數據的製程、問題描述的失效模式強相關，邏輯閉環。
-
-      示例：
-      {"ack": "好的，已根據Assy製程特性與低不良率，排查了磁鐵點膠機台與治具殘膠情況。", "content": "1.查詢不良物料SN過站記錄，均為M1線10/28生產物料，全製程一次過站，無重工記錄。\n2.排查磁鐵點膠機CCD圖片，點膠時磁鐵已偏位，與客訴不良一致。\n3.排查裝配治具，發現偏位磁鐵對應的載具存在殘膠，影響裝配尺寸導致NG。"}
-
-      【輸入區】
-       Meta Data: {{metadata}}
-      問題描述: {{issue_description}}
+        你是一位資料檢索專家。請從以下【知識庫檢索結果】中，提取與「問題分析」直接相關的資料片段。
 
 
-    use_rag: true
-    rag_tag: "faca_kb"
+        ## 提取規則
 
-  - target_placeholder: "ROOT_CAUSE"
-    module: "根本原因"
-    module_label: "根本原因"
-    prompt: |
-      # Task / 任務 (Task)
-      請根據我提供的【Meta Data 元數據】、【問題描述】與【問題分析】，總結並提煉出對應的【根本原因】。
-      在撰寫時，你必須嚴格遵守以下邏輯與推演限制：
+        1. 只提取與「問題分析」相關的內容（如：失效現象描述、不良形態、歷史案例中的問題分析段落）
 
-      1. 雙維歸因結構：根本原因必須且通常只包含兩個獨立維度：
-         - 「產生原因（或製程原因）」：物理上到底是什麼異常導致了產品損壞（為什麼會壞）。
-         - 「流出原因（或漏出原因）」：品管或系統的哪道防線失效，導致殘次品沒有被攔截（為什麼沒攔住）。
-      2. 鎖定物理根因：從【問題分析】中提取最核心的物理、化學或動作失誤（如：T19刀具斷裂、定位氣缸氣管接反、手套破損導致汗液腐蝕）。用簡潔的「A發生異常 -> 導致B狀態 -> 造成C不良」的因果長句式表達。
-      3. 明確漏失節點：流出原因必須明確指出在哪個環節失效（如：FQC全檢漏檢、AOI未錄入該缺陷範本、抽檢比例未涵蓋、機台防呆報警未開啟）。
-      4. 剔除調查廢話：根本原因是最終的「判決書」，絕不能包含「經排查...」、「查詢系統發現...」、「懷疑是...」等調查過程用語，直接給出客觀定論。
+        2. 原封不動提取原文，不改寫、不總結、不推測
 
-      # Format / 格式 (Format)
-      每次回覆你必須且只能返回一個嚴格的 JSON 對象，包含兩個字段。絕對不要輸出任何其他內容、解釋或 markdown 標記（如 ```json）：
-      - "ack": 簡短回應（不超過 50 字），確認你已從分析中提取出核心失效機制與防線漏洞。
-      - "content": 最終的【根本原因】文本內容。請使用 \n 處理換行以確保 JSON 格式合法。
+        3. 每條資料獨立編號，格式：1. xxx 2. xxx ...
 
-      【content 字段的寫作要求】
-      - 語言風格：語言極度精煉、客觀冷峻。重度使用製造業黑話與中英夾雜（如 CNC, Assy, CCD, FQC, AOI, 治具, 載具, 夾屑, 偏位, 漏銑）。
-      - 結構模板：請強制使用「產生原因：... \n 流出原因：...」 或 「1. 產生原因：... \n 2. 流出原因：...」 的排版結構。
-      - 內容約束：確保提煉出的原因與提供的【Meta Data】製程強相關，並與【問題分析】的結論完全一致。
+        4. 如果沒有相關資料，輸出「無相關資料」
 
-      示例：
-      {"ack": "好的，已從問題分析中精準提取出治具干涉的物理根因與AOI漏檢的防線缺失，生成根本原因。", "content": "1. 產生原因：裝配治具X向設計間隙偏下限，與小件來料溢膠產生干涉，導致裝配壓合時UV膠受擠壓開裂。\n2. 流出原因：Orion flex UV開裂非AOI全檢項目，且目視檢驗人員未及時發現，導致不良品流出。"}
 
-      【輸入區】
-      Meta Data: {{metadata}}
-      問題描述: {{issue_description}}
-      問題分析: {{context_ISSUE_ANALYSIS}}
-    use_rag: true
-    rag_tag: "faca_kb"
+        ## 輸出格式
 
-  - target_placeholder: "CONTAINMENT"
-    module: "圍堵措施"
-    module_label: "圍堵措施"
-    prompt: |
-      # Task / 任務 (Task)
-      請根據我提供的【Meta Data】、【問題描述】、【問題分析】與【根本原因】，推理並撰寫對應的【圍堵措施】（Containment Action）。
-      在撰寫時，你必須嚴格遵守以下邏輯與推演限制（只需關聯已知信息，保證風格專業，暫不要求深層技術推理）：
+        嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
 
-      1. 物料分佈清查（WIP & Inventory）：必須根據【問題分析】中鎖定的嫌疑時間、機台或批次，將物料分為三個維度進行處置描述：
-         - 「已出貨 / 客戶端」：交由 FAE（現場應用工程師）或駐廠人員進行鎖機攔截、隨線 Sorting 或全檢。
-         - 「廠內庫存 / MCEG」：執行系統扣帳（Hold）、鎖 2D 碼攔截，並安排專人重工（Rework）或 Sorting。
-         - 「在製品（WIP）」：產線立即停線檢查，FQC/OQC 系統攔截確認品質。
-      2. 檢驗手段對齊：圍堵的 Sorting（挑磚）動作必須對應【問題描述】中的不良形態（如：外觀不良用目視/CCD放大；尺寸不良用實配檢具/Go-NoGo檢具；內部不良用 X-Ray 或重新過 AIM 測試站）。
-      3. 堵住流出點（Escape 防堵）：必須針對【根本原因】中提到的漏失點（漏檢），給出立即的防堵指令（如：FQC 製作單點課程教育訓練、OQC 抽檢 AQL 加嚴、臨時導入 100% 全檢）。
-      4. 標識要求：所有經過重工或全檢 OK 的物料，出貨時必須明確標註（如：外箱標識"XX不良全檢OK"）。
+        - "ack": "已從知識庫提取 N 條相關資料"
 
-      # Format / 格式 (Format)
-      每次回覆你必須且只能返回一個嚴格的 JSON 對象，包含兩個字段。絕對不要輸出任何其他內容、解釋或 markdown 標記（如 ```json）：
-      - "ack": 簡短回應（不超過 50 字），確認你理解了異常範圍與對應的物料攔截重點。
-      - "content": 根據輸入信息生成的【圍堵措施】最終文本內容。請使用 \n 處理換行以確保 JSON 格式合法。
+        - "content": "#資料分析\n1. xxx\n2. xxx\n..."
 
-      【content 字段的寫作要求】
-      - 語言風格：語言精煉、去個人化。動賓結構開頭（如「排查...」、「攔截...」、「導入...」）。重度使用行業黑話與中英夾雜（如 Sorting, FAE, FQC, AQL, 2D碼, 單點課程, Go-NoGo, 重工）。不允許出現模糊字眼，可用虛擬具體數據（如「庫存約 15K 全部扣貨」）增加真實感。
-      - 結構模板：請拆分成編號步驟（1. 2. 3. ...）進行條列式說明。
-      - 內容約束：內容必須強烈呼應輸入的四個維度，形成「哪裡發現不良 -> 哪裡就有人去攔截」、「漏檢了什麼 -> 現在就 100% 全檢什麼」的閉環。
 
-      示例：
-      {"ack": "收到，已根據機台斷刀記錄鎖定嫌疑區間，並對 FATP 客戶端與廠內在製品下達 Sorting 與系統攔截指令。", "content": "1. 針對 18# 機台前後 4H 嫌疑物料共 120pcs 進行管控：已出貨 FATP 的 50pcs 由 FAE 協助隨線 Sorting 攔截；庫存 40pcs 系統扣貨並目視全檢；在製 30pcs 於 FQC 處系統鎖 2D 碼攔截。\n2. 針對客戶端已上線不良，FAE 駐場 100% 全檢外觀，確認 OK 後方可上線。\n3. QE 製作此類結構少銑之單點課程（OPL），CNC6 全檢線臨時導入此特徵之 100% 重點檢驗，外箱標識「少銑全檢 OK」出貨。"}
+        【知識庫檢索結果】
 
-      【輸入區】
-      Meta Data: {{metadata}}
-      問題描述: {{issue_description}}
-      問題分析: {{context_ISSUE_ANALYSIS}}
-      根本原因: {{context_ROOT_CAUSE}}
-    use_rag: true
-    rag_tag: "faca_kb"
+        {{rag_context}}
 
-  - target_placeholder: "CORRECTIVE"
-    module: "改善對策"
-    module_label: "改善對策"
-    prompt: |
-      # Task / 任務 (Task)
-      請根據我提供的【Meta Data 元數據】、【問題描述】、【問題分析】、【根本原因】與【圍堵措施】，推演並撰寫最終的【改善對策 (Corrective Actions)】。
-      在撰寫時，你必須嚴格遵守以下邏輯與推演限制（只要邏輯有關聯，維持專業工程風格即可）：
+        '
+      input_vars:
+      - rag_context
+      output_var: extract_result
+    - name: reason
+      prompt: "# Task / 任務 (Task)\n請根據我提供的【Meta Data 元數據】、【問題描述】與【參考資料】，推理並撰寫對應的【問題分析】。\n\
+        \n## 參考資料（來自知識庫）\n{{extract_result}}\n\n## 上下文背景\n{{context_background}}\n\
+        \n## 寫作規則\n在撰寫時，你必須嚴格遵守以下邏輯與推演限制：\n\n1. 提取溯源：分析的第一步，必須是利用描述中的 SN/DQR 碼「虛擬查詢」過站記錄，給出具體的（虛擬但合理的）生產時間、線體與機台編號。\n\
+        2. 對齊製程：如果元數據顯示為 CNC（金加），排查重點必須圍繞機台首件、刀具（換刀/斷刀記錄）、CMM/OMM 檢測；如果為 Assy（組裝），重點必須是治具/載具磨損、點膠參數（膠量/氣壓/UV固化）、CCD\
+        \ 視覺抓邊或人員重工（Rework）記錄。\n3. 判定共性：根據描述中的不良率（F/R），若是高頻批量不良，推導為設備/治具異常或來料問題；若為極低頻，推導為偶發操作失誤、漏檢或單次重工不良。\n\
+        4. 物理推演：用純客觀的工程視角，簡述該不良形態在該工段是如何發生的（如：治具定位柱鬆動導致偏位、切削液與陽極藥水反應導致腐蝕）。\n\n## 輸出格式\n\
+        嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：\n- \"ack\": 簡短回應（不超過 50 字），確認你理解了用戶的意思及本次分析的製程重點。\n\
+        - \"content\": |\n    #資料分析\n    （原封不動把上面「參考資料」的內容放上來）\n\n    #AI推理\n    （你根據上下文生成的問題分析內容）\n\
+        \n【輸入區】\nMeta Data: {{metadata}}\n問題描述: {{issue_description}}\n"
+      input_vars:
+      - extract_result
+      - context_background
+      - metadata
+      - issue_description
+      output_var: reason_result
+    - name: sanitize
+      prompt: '# Task / 資料脫敏
 
-      1. 根因對策化 (工程防呆)：針對【根本原因】提出治具修改、機台程式優化（如加入報警停機、防呆 Sensor）或加工參數調整，從物理或系統層面防止異常發生。
-      2. 圍堵長效化 (檢驗升級)：將【圍堵措施】中的人工全檢或臨時動作，轉化為長期的檢驗機制。如導入 CCD/AOI 視覺識別、增加專用檢具（Go/No-go）、或在治具上增加檢測功能。
-      3. 作業標準化 (SOP與培訓)：針對人員操作，必須包含製作「單點課程 (OPL)」或「不良樣板」，並對生產與檢驗人員（IPQC/FQC）進行教育訓練或盲測考核。
-      4. 品管卡控 (QC Gate)：明確提出品質抽驗標準的加嚴（例如：增加巡檢頻率 1次/2H，或 OQC 抽檢 AQL 標準由 0.65 加嚴至 0.4）。
 
-      # Format / 格式 (Format)
-      每次回覆你必須且只能返回一個嚴格的 JSON 對象，包含兩個字段。絕對不要輸出任何其他內容、解釋或 markdown 標記（如 ```json）：
-      - "ack": 簡短回應（不超過 50 字），確認你理解了異常根因，以及本次改善對策的防堵重點。
-      - "content": 最終的【改善對策】文本內容。請使用 \n 處理換行以確保 JSON 格式合法。
+        請從以下內容中提取「#AI推理」部分，並將具體數據替換為佔位符，生成脫敏版本。
 
-      【content 字段的寫作要求】
-      - 語言風格：強烈的祈使語氣與行動導向（如「增加...」、「優化...」、「導入...」、「攔截...」）。重度使用行業黑話與中英夾雜（如 防呆, 單點課程, CCD, AOI, AIM, AQL, IPQC, FQC, Go/Nogo）。
-      - 結構模板：請拆分成編號步驟（1. 2. 3. ...），通常包含製程改善、檢驗改善、人員管理三個維度。
-      - 內容約束：確保對策與輸入的根本原因、圍堵措施強相關，形成完整的邏輯閉環。
 
-      示例：
-      {"ack": "好的，已針對磁鐵偏位根因，擬定治具防呆優化、AOI視覺導入及AQL加嚴等改善對策。", "content": "1. 治具防呆：生技優化磁鐵裝配治具，X向避位空間增加0.1mm，並加入感應器，未貼合即報警鎖機。\n2. 檢驗升級：將磁鐵偏位不良加入AOI機台檢測項目，系統自動比對NG範本攔截。\n3. 人員培訓：QE製作磁鐵偏位單點課程，懸掛於檢驗工站，對IPQC及FQC進行教育訓練與盲測。\n4. 品管加嚴：OQC對此不良做重點抽檢，AQL抽樣標準由0.65加嚴至0.4，防堵不良流出。"}
+        ## 處理步驟
 
-      【輸入區】
-      Meta Data: {{metadata}}
-      問題描述: {{issue_description}}
-      問題分析: {{context_ISSUE_ANALYSIS}}
-      根本原因: {{context_ROOT_CAUSE}}
-      圍堵措施: {{context_CONTAINMENT}}
-    use_rag: true
-    rag_tag: "faca_kb"
+        1. 首先，從輸入內容中找到「#AI推理」或「# AI推理」標記
 
-# ── Section 4: Context engineering (dependency graph) ─────────────────────────
+        2. 只提取該標記之後的內容（不要包含「#資料分析」部分）
+
+        3. 對提取的內容進行數據脫敏
+
+
+        ## 替換規則（嚴格執行）
+
+        - 日期/時間（如 10/28、2024-01-15、10:30）→ 【日期】
+
+        - 線體/機台編號（如 M1線、18#機台、CNC6）→ 【線體編號】或【機台編號】
+
+        - SN/DQR碼（如 SN123456、DQR-789）→ 【SN碼】
+
+        - 刀具/治具參數（如 T19刀具、0.1mm間隙）→ 【刀具型號】或【參數值】
+
+        - 具體數量/不良率（如 120pcs、50pcs、F/R 0.5%）→ 【數量】或【不良率】
+
+        - 批次號/工單號 → 【批次號】
+
+
+        ## 嚴格限制
+
+        1. 絕對保留原意、因果邏輯與原本的標號
+
+        2. 未涉及具體數據的推理句必須一字不改地保留
+
+        3. 除了替換數據，絕對不允許重新造句或改變句型結構
+
+        4. 只輸出「#AI推理」之後的內容，不要包含「#資料分析」部分
+
+
+        【待脫敏內容】
+
+        {{reason_result}}'
+      input_vars:
+      - reason_result
+      output_var: final_result
+- target_placeholder: ROOT_CAUSE
+  module: 根本原因
+  module_label: 根本原因
+  prompt: "# Task / 任務 (Task)\n請根據我提供的【Meta Data 元數據】、【問題描述】與【問題分析】，總結並提煉出對應的【根本原因】。\n\
+    在撰寫時，你必須嚴格遵守以下邏輯與推演限制：\n\n1. 雙維歸因結構：根本原因必須且通常只包含兩個獨立維度：\n   - 「產生原因（或製程原因）」：物理上到底是什麼異常導致了產品損壞（為什麼會壞）。\n\
+    \   - 「流出原因（或漏出原因）」：品管或系統的哪道防線失效，導致殘次品沒有被攔截（為什麼沒攔住）。\n2. 鎖定物理根因：從【問題分析】中提取最核心的物理、化學或動作失誤（如：T19刀具斷裂、定位氣缸氣管接反、手套破損導致汗液腐蝕）。用簡潔的「A發生異常\
+    \ -> 導致B狀態 -> 造成C不良」的因果長句式表達。\n3. 明確漏失節點：流出原因必須明確指出在哪個環節失效（如：FQC全檢漏檢、AOI未錄入該缺陷範本、抽檢比例未涵蓋、機台防呆報警未開啟）。\n\
+    4. 剔除調查廢話：根本原因是最終的「判決書」，絕不能包含「經排查...」、「查詢系統發現...」、「懷疑是...」等調查過程用語，直接給出客觀定論。\n\n\
+    # Format / 格式 (Format)\n每次回覆你必須且只能返回一個嚴格的 JSON 對象，包含兩個字段。絕對不要輸出任何其他內容、解釋或 markdown\
+    \ 標記（如 ```json）：\n- \"ack\": 簡短回應（不超過 50 字），確認你已從分析中提取出核心失效機制與防線漏洞。\n- \"content\"\
+    : 最終的【根本原因】文本內容。請使用 \\n 處理換行以確保 JSON 格式合法。\n\n【content 字段的寫作要求】\n- 語言風格：語言極度精煉、客觀冷峻。重度使用製造業黑話與中英夾雜（如\
+    \ CNC, Assy, CCD, FQC, AOI, 治具, 載具, 夾屑, 偏位, 漏銑）。\n- 結構模板：請強制使用「產生原因：... \\n 流出原因：...」\
+    \ 或 「1. 產生原因：... \\n 2. 流出原因：...」 的排版結構。\n- 內容約束：確保提煉出的原因與提供的【Meta Data】製程強相關，並與【問題分析】的結論完全一致。\n\
+    \n示例：\n{\"ack\": \"好的，已從問題分析中精準提取出治具干涉的物理根因與AOI漏檢的防線缺失，生成根本原因。\", \"content\"\
+    : \"1. 產生原因：裝配治具X向設計間隙偏下限，與小件來料溢膠產生干涉，導致裝配壓合時UV膠受擠壓開裂。\\n2. 流出原因：Orion flex UV開裂非AOI全檢項目，且目視檢驗人員未及時發現，導致不良品流出。\"\
+    }\n\n【輸入區】\nMeta Data: {{metadata}}\n問題描述: {{issue_description}}\n問題分析: {{context_ISSUE_ANALYSIS}}\n"
+  use_rag: true
+  rag_tag: faca_kb
+  multi_turn_prompt: "# Task / 多輪調整\n\n你剛才在 reason 步驟生成的【根本原因】已經過 sanitize 脫敏處理，用戶當前在介面上看到並要調整的內容如下。請基於你 reason 步驟的完整上下文記憶（含 #資料分析 與 #AI推理 原文）理解用戶意圖，但改寫的對象是「用戶當前看到的脫敏版內容」，而不是你 reason 步驟的原文。\n\n## 用戶當前看到的內容（脫敏版）\n{{current_content}}\n\n## 用戶的新指令\n{{user_message}}\n\n## 規則\n1. 保留脫敏佔位符風格（【日期】【線體編號】【SN碼】【刀具型號】【數量】【不良率】【批次號】等），不要還原成具體數據\n2. 遵守原 reason 步驟的寫作風格與結構要求（「產生原因：... 流出原因：...」結構，行業黑話中英夾雜）\n3. 只改寫用戶指令涉及的部分，其餘保持不變\n\n## 輸出格式\n嚴格返回 JSON 對象，絕不輸出 markdown 標記：\n- \"ack\": 簡短回應（不超過 50 字）\n- \"content\": 改寫後的【根本原因】文本，使用 \\n 處理換行\n"
+  pipeline:
+    enabled: true
+    steps:
+    - name: extract
+      prompt: '# Task / 資料提取
+
+        你是一位資料檢索專家。請從以下【知識庫檢索結果】中，提取與「根本原因分析」直接相關的資料片段。
+
+
+        ## 提取規則
+
+        1. 只提取與「根本原因」相關的內容（如：失效機制、物理根因、漏檢原因、歷史案例中的根因段落）
+
+        2. 原封不動提取原文，不改寫、不總結、不推測
+
+        3. 每條資料獨立編號，格式：1. xxx 2. xxx ...
+
+        4. 如果沒有相關資料，輸出「無相關資料」
+
+
+        ## 輸出格式
+
+        嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+
+        - "ack": "已從知識庫提取 N 條相關資料"
+
+        - "content": "#資料分析\n1. xxx\n2. xxx\n..."
+
+
+        【知識庫檢索結果】
+
+        {{rag_context}}
+
+        '
+      input_vars:
+      - rag_context
+      output_var: extract_result
+    - name: reason
+      prompt: "# Task / 任務 (Task)\n請根據我提供的【Meta Data 元數據】、【問題描述】、【問題分析】與【參考資料】，總結並提煉出對應的【根本原因】。\n\
+        \n## 參考資料（來自知識庫）\n{{extract_result}}\n\n## 上下文背景\n{{context_background}}\n\
+        \n## 寫作規則\n在撰寫時，你必須嚴格遵守以下邏輯與推演限制：\n\n1. 雙維歸因結構：根本原因必須且通常只包含兩個獨立維度：\n   - 「產生原因（或製程原因）」：物理上到底是什麼異常導致了產品損壞（為什麼會壞）。\n\
+        \   - 「流出原因（或漏出原因）」：品管或系統的哪道防線失效，導致殘次品沒有被攔截（為什麼沒攔住）。\n2. 鎖定物理根因：從【問題分析】中提取最核心的物理、化學或動作失誤。用簡潔的「A發生異常\
+        \ -> 導致B狀態 -> 造成C不良」的因果長句式表達。\n3. 明確漏失節點：流出原因必須明確指出在哪個環節失效。\n4. 剔除調查廢話：根本原因是最終的「判決書」，直接給出客觀定論。\n\
+        \n## 輸出格式\n嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：\n- \"ack\": 簡短回應\n\
+        - \"content\": |\n    #資料分析\n    （原封不動把上面「參考資料」的內容放上來）\n\n    #AI推理\n    （你生成的根本原因分析，使用「產生原因：...\
+        \ 流出原因：...」結構）\n\n【輸入區】\nMeta Data: {{metadata}}\n問題描述: {{issue_description}}\n\
+        問題分析: {{context_ISSUE_ANALYSIS}}\n"
+      input_vars:
+      - extract_result
+      - context_background
+      - metadata
+      - issue_description
+      - context_ISSUE_ANALYSIS
+      output_var: reason_result
+    - name: sanitize
+      prompt: '# Task / 資料脫敏
+
+
+        請從以下內容中提取「#AI推理」部分，並將具體數據替換為佔位符，生成脫敏版本。
+
+
+        ## 處理步驟
+
+        1. 首先，從輸入內容中找到「#AI推理」或「# AI推理」標記
+
+        2. 只提取該標記之後的內容（不要包含「#資料分析」部分）
+
+        3. 對提取的內容進行數據脫敏
+
+
+        ## 替換規則（嚴格執行）
+
+        - 日期/時間（如 10/28、2024-01-15、10:30）→ 【日期】
+
+        - 線體/機台編號（如 M1線、18#機台、CNC6）→ 【線體編號】或【機台編號】
+
+        - SN/DQR碼（如 SN123456、DQR-789）→ 【SN碼】
+
+        - 刀具/治具參數（如 T19刀具、0.1mm間隙）→ 【刀具型號】或【參數值】
+
+        - 具體數量/不良率（如 120pcs、50pcs、F/R 0.5%）→ 【數量】或【不良率】
+
+        - 批次號/工單號 → 【批次號】
+
+
+        ## 嚴格限制
+
+        1. 絕對保留原意、因果邏輯與原本的標號
+
+        2. 未涉及具體數據的推理句必須一字不改地保留
+
+        3. 除了替換數據，絕對不允許重新造句或改變句型結構
+
+        4. 只輸出「#AI推理」之後的內容，不要包含「#資料分析」部分
+
+
+        【待脫敏內容】
+
+        {{reason_result}}'
+      input_vars:
+      - reason_result
+      output_var: final_result
+- target_placeholder: CONTAINMENT
+  module: 圍堵措施
+  module_label: 圍堵措施
+  prompt: "# Task / 任務 (Task)\n請根據我提供的【Meta Data】、【問題描述】、【問題分析】與【根本原因】，推理並撰寫對應的【圍堵措施】（Containment\
+    \ Action）。\n在撰寫時，你必須嚴格遵守以下邏輯與推演限制（只需關聯已知信息，保證風格專業，暫不要求深層技術推理）：\n\n1. 物料分佈清查（WIP\
+    \ & Inventory）：必須根據【問題分析】中鎖定的嫌疑時間、機台或批次，將物料分為三個維度進行處置描述：\n   - 「已出貨 / 客戶端」：交由\
+    \ FAE（現場應用工程師）或駐廠人員進行鎖機攔截、隨線 Sorting 或全檢。\n   - 「廠內庫存 / MCEG」：執行系統扣帳（Hold）、鎖 2D\
+    \ 碼攔截，並安排專人重工（Rework）或 Sorting。\n   - 「在製品（WIP）」：產線立即停線檢查，FQC/OQC 系統攔截確認品質。\n\
+    2. 檢驗手段對齊：圍堵的 Sorting（挑磚）動作必須對應【問題描述】中的不良形態（如：外觀不良用目視/CCD放大；尺寸不良用實配檢具/Go-NoGo檢具；內部不良用\
+    \ X-Ray 或重新過 AIM 測試站）。\n3. 堵住流出點（Escape 防堵）：必須針對【根本原因】中提到的漏失點（漏檢），給出立即的防堵指令（如：FQC\
+    \ 製作單點課程教育訓練、OQC 抽檢 AQL 加嚴、臨時導入 100% 全檢）。\n4. 標識要求：所有經過重工或全檢 OK 的物料，出貨時必須明確標註（如：外箱標識\"\
+    XX不良全檢OK\"）。\n\n# Format / 格式 (Format)\n每次回覆你必須且只能返回一個嚴格的 JSON 對象，包含兩個字段。絕對不要輸出任何其他內容、解釋或\
+    \ markdown 標記（如 ```json）：\n- \"ack\": 簡短回應（不超過 50 字），確認你理解了異常範圍與對應的物料攔截重點。\n-\
+    \ \"content\": 根據輸入信息生成的【圍堵措施】最終文本內容。請使用 \\n 處理換行以確保 JSON 格式合法。\n\n【content 字段的寫作要求】\n\
+    - 語言風格：語言精煉、去個人化。動賓結構開頭（如「排查...」、「攔截...」、「導入...」）。重度使用行業黑話與中英夾雜（如 Sorting, FAE,\
+    \ FQC, AQL, 2D碼, 單點課程, Go-NoGo, 重工）。不允許出現模糊字眼，可用虛擬具體數據（如「庫存約 15K 全部扣貨」）增加真實感。\n\
+    - 結構模板：請拆分成編號步驟（1. 2. 3. ...）進行條列式說明。\n- 內容約束：內容必須強烈呼應輸入的四個維度，形成「哪裡發現不良 -> 哪裡就有人去攔截」、「漏檢了什麼\
+    \ -> 現在就 100% 全檢什麼」的閉環。\n\n示例：\n{\"ack\": \"收到，已根據機台斷刀記錄鎖定嫌疑區間，並對 FATP 客戶端與廠內在製品下達\
+    \ Sorting 與系統攔截指令。\", \"content\": \"1. 針對 18# 機台前後 4H 嫌疑物料共 120pcs 進行管控：已出貨 FATP\
+    \ 的 50pcs 由 FAE 協助隨線 Sorting 攔截；庫存 40pcs 系統扣貨並目視全檢；在製 30pcs 於 FQC 處系統鎖 2D 碼攔截。\\\
+    n2. 針對客戶端已上線不良，FAE 駐場 100% 全檢外觀，確認 OK 後方可上線。\\n3. QE 製作此類結構少銑之單點課程（OPL），CNC6 全檢線臨時導入此特徵之\
+    \ 100% 重點檢驗，外箱標識「少銑全檢 OK」出貨。\"}\n\n【輸入區】\nMeta Data: {{metadata}}\n問題描述: {{issue_description}}\n\
+    問題分析: {{context_ISSUE_ANALYSIS}}\n根本原因: {{context_ROOT_CAUSE}}\n"
+  use_rag: true
+  rag_tag: faca_kb
+  multi_turn_prompt: "# Task / 多輪調整\n\n你剛才在 reason 步驟生成的【圍堵措施】已經過 sanitize 脫敏處理，用戶當前在介面上看到並要調整的內容如下。請基於你 reason 步驟的完整上下文記憶（含 #資料分析 與 #AI推理 原文）理解用戶意圖，但改寫的對象是「用戶當前看到的脫敏版內容」，而不是你 reason 步驟的原文。\n\n## 用戶當前看到的內容（脫敏版）\n{{current_content}}\n\n## 用戶的新指令\n{{user_message}}\n\n## 規則\n1. 保留脫敏佔位符風格（【日期】【線體編號】【SN碼】【刀具型號】【數量】【不良率】【批次號】等），不要還原成具體數據\n2. 遵守原 reason 步驟的寫作風格與結構要求（編號步驟、動賓結構開頭、行業黑話中英夾雜）\n3. 只改寫用戶指令涉及的部分，其餘保持不變\n\n## 輸出格式\n嚴格返回 JSON 對象，絕不輸出 markdown 標記：\n- \"ack\": 簡短回應（不超過 50 字）\n- \"content\": 改寫後的【圍堵措施】文本，使用 \\n 處理換行\n"
+  pipeline:
+    enabled: true
+    steps:
+    - name: extract
+      prompt: '# Task / 資料提取
+
+        你是一位資料檢索專家。請從以下【知識庫檢索結果】中，提取與「圍堵措施」直接相關的資料片段。
+
+
+        ## 提取規則
+
+        1. 只提取與「圍堵措施」相關的內容（如：物料管控、Sorting方法、攔截指令、歷史案例中的圍堵段落）
+
+        2. 原封不動提取原文，不改寫、不總結、不推測
+
+        3. 每條資料獨立編號，格式：1. xxx 2. xxx ...
+
+        4. 如果沒有相關資料，輸出「無相關資料」
+
+
+        ## 輸出格式
+
+        嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+
+        - "ack": "已從知識庫提取 N 條相關資料"
+
+        - "content": "#資料分析\n1. xxx\n2. xxx\n..."
+
+
+        【知識庫檢索結果】
+
+        {{rag_context}}
+
+        '
+      input_vars:
+      - rag_context
+      output_var: extract_result
+    - name: reason
+      prompt: "# Task / 任務 (Task)\n請根據我提供的【Meta Data】、【問題描述】、【問題分析】、【根本原因】與【參考資料】，推理並撰寫對應的【圍堵措施】（Containment\
+        \ Action）。\n\n## 參考資料（來自知識庫）\n{{extract_result}}\n\n## 上下文背景\n{{context_background}}\n\
+        \n## 寫作規則\n在撰寫時，你必須嚴格遵守以下邏輯與推演限制：\n\n1. 物料分佈清查（WIP & Inventory）：必須根據【問題分析】中鎖定的嫌疑時間、機台或批次，將物料分為三個維度進行處置描述：\n\
+        \   - 「已出貨 / 客戶端」：交由 FAE 進行鎖機攔截、隨線 Sorting 或全檢。\n   - 「廠內庫存 / MCEG」：執行系統扣帳（Hold）、鎖\
+        \ 2D 碼攔截，並安排專人重工或 Sorting。\n   - 「在製品（WIP）」：產線立即停線檢查，FQC/OQC 系統攔截確認品質。\n2.\
+        \ 檢驗手段對齊：圍堵的 Sorting 動作必須對應【問題描述】中的不良形態。\n3. 堵住流出點（Escape 防堵）：必須針對【根本原因】中提到的漏失點，給出立即的防堵指令。\n\
+        4. 標識要求：所有經過重工或全檢 OK 的物料，出貨時必須明確標註。\n\n## 輸出格式\n嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown\
+        \ 標記（如 ```json）：\n- \"ack\": 簡短回應\n- \"content\": |\n    #資料分析\n    （原封不動把上面「參考資料」的內容放上來）\n\
+        \n    #AI推理\n    （你生成的圍堵措施，條列式，動賓結構開頭）\n\n【輸入區】\nMeta Data: {{metadata}}\n\
+        問題描述: {{issue_description}}\n問題分析: {{context_ISSUE_ANALYSIS}}\n根本原因: {{context_ROOT_CAUSE}}\n"
+      input_vars:
+      - extract_result
+      - context_background
+      - metadata
+      - issue_description
+      - context_ISSUE_ANALYSIS
+      - context_ROOT_CAUSE
+      output_var: reason_result
+    - name: sanitize
+      prompt: '# Task / 資料脫敏
+
+
+        請從以下內容中提取「#AI推理」部分，並將具體數據替換為佔位符，生成脫敏版本。
+
+
+        ## 處理步驟
+
+        1. 首先，從輸入內容中找到「#AI推理」或「# AI推理」標記
+
+        2. 只提取該標記之後的內容（不要包含「#資料分析」部分）
+
+        3. 對提取的內容進行數據脫敏
+
+
+        ## 替換規則（嚴格執行）
+
+        - 日期/時間（如 10/28、2024-01-15、10:30）→ 【日期】
+
+        - 線體/機台編號（如 M1線、18#機台、CNC6）→ 【線體編號】或【機台編號】
+
+        - SN/DQR碼（如 SN123456、DQR-789）→ 【SN碼】
+
+        - 刀具/治具參數（如 T19刀具、0.1mm間隙）→ 【刀具型號】或【參數值】
+
+        - 具體數量/不良率（如 120pcs、50pcs、F/R 0.5%）→ 【數量】或【不良率】
+
+        - 批次號/工單號 → 【批次號】
+
+
+        ## 嚴格限制
+
+        1. 絕對保留原意、因果邏輯與原本的標號
+
+        2. 未涉及具體數據的推理句必須一字不改地保留
+
+        3. 除了替換數據，絕對不允許重新造句或改變句型結構
+
+        4. 只輸出「#AI推理」之後的內容，不要包含「#資料分析」部分
+
+
+        【待脫敏內容】
+
+        {{reason_result}}'
+      input_vars:
+      - reason_result
+      output_var: final_result
+- target_placeholder: CORRECTIVE
+  module: 改善對策
+  module_label: 改善對策
+  prompt: '# Task / 任務 (Task)
+
+    請根據我提供的【Meta Data 元數據】、【問題描述】、【問題分析】、【根本原因】與【圍堵措施】，推演並撰寫最終的【改善對策 (Corrective Actions)】。
+
+    在撰寫時，你必須嚴格遵守以下邏輯與推演限制（只要邏輯有關聯，維持專業工程風格即可）：
+
+
+    1. 根因對策化 (工程防呆)：針對【根本原因】提出治具修改、機台程式優化（如加入報警停機、防呆 Sensor）或加工參數調整，從物理或系統層面防止異常發生。
+
+    2. 圍堵長效化 (檢驗升級)：將【圍堵措施】中的人工全檢或臨時動作，轉化為長期的檢驗機制。如導入 CCD/AOI 視覺識別、增加專用檢具（Go/No-go）、或在治具上增加檢測功能。
+
+    3. 作業標準化 (SOP與培訓)：針對人員操作，必須包含製作「單點課程 (OPL)」或「不良樣板」，並對生產與檢驗人員（IPQC/FQC）進行教育訓練或盲測考核。
+
+    4. 品管卡控 (QC Gate)：明確提出品質抽驗標準的加嚴（例如：增加巡檢頻率 1次/2H，或 OQC 抽檢 AQL 標準由 0.65 加嚴至 0.4）。
+
+
+    # Format / 格式 (Format)
+
+    每次回覆你必須且只能返回一個嚴格的 JSON 對象，包含兩個字段。絕對不要輸出任何其他內容、解釋或 markdown 標記（如 ```json）：
+
+    - "ack": 簡短回應（不超過 50 字），確認你理解了異常根因，以及本次改善對策的防堵重點。
+
+    - "content": 最終的【改善對策】文本內容。請使用 \n 處理換行以確保 JSON 格式合法。
+
+
+    【content 字段的寫作要求】
+
+    - 語言風格：強烈的祈使語氣與行動導向（如「增加...」、「優化...」、「導入...」、「攔截...」）。重度使用行業黑話與中英夾雜（如 防呆, 單點課程,
+    CCD, AOI, AIM, AQL, IPQC, FQC, Go/Nogo）。
+
+    - 結構模板：請拆分成編號步驟（1. 2. 3. ...），通常包含製程改善、檢驗改善、人員管理三個維度。
+
+    - 內容約束：確保對策與輸入的根本原因、圍堵措施強相關，形成完整的邏輯閉環。
+
+
+    示例：
+
+    {"ack": "好的，已針對磁鐵偏位根因，擬定治具防呆優化、AOI視覺導入及AQL加嚴等改善對策。", "content": "1. 治具防呆：生技優化磁鐵裝配治具，X向避位空間增加0.1mm，並加入感應器，未貼合即報警鎖機。\n2.
+    檢驗升級：將磁鐵偏位不良加入AOI機台檢測項目，系統自動比對NG範本攔截。\n3. 人員培訓：QE製作磁鐵偏位單點課程，懸掛於檢驗工站，對IPQC及FQC進行教育訓練與盲測。\n4.
+    品管加嚴：OQC對此不良做重點抽檢，AQL抽樣標準由0.65加嚴至0.4，防堵不良流出。"}
+
+
+    【輸入區】
+
+    Meta Data: {{metadata}}
+
+    問題描述: {{issue_description}}
+
+    問題分析: {{context_ISSUE_ANALYSIS}}
+
+    根本原因: {{context_ROOT_CAUSE}}
+
+    圍堵措施: {{context_CONTAINMENT}}
+
+    '
+  use_rag: true
+  rag_tag: faca_kb
+  multi_turn_prompt: "# Task / 多輪調整\n\n你剛才在 reason 步驟生成的【改善對策】已經過 sanitize 脫敏處理，用戶當前在介面上看到並要調整的內容如下。請基於你 reason 步驟的完整上下文記憶（含 #資料分析 與 #AI推理 原文）理解用戶意圖，但改寫的對象是「用戶當前看到的脫敏版內容」，而不是你 reason 步驟的原文。\n\n## 用戶當前看到的內容（脫敏版）\n{{current_content}}\n\n## 用戶的新指令\n{{user_message}}\n\n## 規則\n1. 保留脫敏佔位符風格（【日期】【線體編號】【SN碼】【刀具型號】【數量】【不良率】【批次號】等），不要還原成具體數據\n2. 遵守原 reason 步驟的寫作風格與結構要求（編號步驟、祈使動詞開頭、行業黑話中英夾雜）\n3. 只改寫用戶指令涉及的部分，其餘保持不變\n\n## 輸出格式\n嚴格返回 JSON 對象，絕不輸出 markdown 標記：\n- \"ack\": 簡短回應（不超過 50 字）\n- \"content\": 改寫後的【改善對策】文本，使用 \\n 處理換行\n"
+  pipeline:
+    enabled: true
+    steps:
+    - name: extract
+      prompt: '# Task / 資料提取
+
+        你是一位資料檢索專家。請從以下【知識庫檢索結果】中，提取與「改善對策」直接相關的資料片段。
+
+
+        ## 提取規則
+
+        1. 只提取與「改善對策/糾正措施」相關的內容（如：防呆改造、檢驗升級、SOP優化、歷史案例中的對策段落）
+
+        2. 原封不動提取原文，不改寫、不總結、不推測
+
+        3. 每條資料獨立編號，格式：1. xxx 2. xxx ...
+
+        4. 如果沒有相關資料，輸出「無相關資料」
+
+
+        ## 輸出格式
+
+        嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+
+        - "ack": "已從知識庫提取 N 條相關資料"
+
+        - "content": "#資料分析\n1. xxx\n2. xxx\n..."
+
+
+        【知識庫檢索結果】
+
+        {{rag_context}}
+
+        '
+      input_vars:
+      - rag_context
+      output_var: extract_result
+    - name: reason
+      prompt: "# Task / 任務 (Task)\n請根據我提供的【Meta Data 元數據】、【問題描述】、【問題分析】、【根本原因】、【圍堵措施】與【參考資料】，推演並撰寫最終的【改善對策\
+        \ (Corrective Actions)】。\n\n## 參考資料（來自知識庫）\n{{extract_result}}\n\n## 上下文背景\n\
+        {{context_background}}\n\n## 寫作規則\n在撰寫時，你必須嚴格遵守以下邏輯與推演限制：\n\n1. 根因對策化 (工程防呆)：針對【根本原因】提出治具修改、機台程式優化或加工參數調整，從物理或系統層面防止異常發生。\n\
+        2. 圍堵長效化 (檢驗升級)：將【圍堵措施】中的人工全檢或臨時動作，轉化為長期的檢驗機制。\n3. 作業標準化 (SOP與培訓)：針對人員操作，必須包含製作「單點課程\
+        \ (OPL)」或「不良樣板」，並對生產與檢驗人員進行教育訓練或盲測考核。\n4. 品管卡控 (QC Gate)：明確提出品質抽驗標準的加嚴。\n\n\
+        ## 輸出格式\n嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：\n- \"ack\": 簡短回應\n\
+        - \"content\": |\n    #資料分析\n    （原封不動把上面「參考資料」的內容放上來）\n\n    #AI推理\n    （你生成的改善對策，條列式，祈使動詞開頭）\n\
+        \n【輸入區】\nMeta Data: {{metadata}}\n問題描述: {{issue_description}}\n問題分析: {{context_ISSUE_ANALYSIS}}\n\
+        根本原因: {{context_ROOT_CAUSE}}\n圍堵措施: {{context_CONTAINMENT}}\n"
+      input_vars:
+      - extract_result
+      - context_background
+      - metadata
+      - issue_description
+      - context_ISSUE_ANALYSIS
+      - context_ROOT_CAUSE
+      - context_CONTAINMENT
+      output_var: reason_result
+    - name: sanitize
+      prompt: '# Task / 資料脫敏
+
+
+        請從以下內容中提取「#AI推理」部分，並將具體數據替換為佔位符，生成脫敏版本。
+
+
+        ## 處理步驟
+
+        1. 首先，從輸入內容中找到「#AI推理」或「# AI推理」標記
+
+        2. 只提取該標記之後的內容（不要包含「#資料分析」部分）
+
+        3. 對提取的內容進行數據脫敏
+
+
+        ## 替換規則（嚴格執行）
+
+        - 日期/時間（如 10/28、2024-01-15、10:30）→ 【日期】
+
+        - 線體/機台編號（如 M1線、18#機台、CNC6）→ 【線體編號】或【機台編號】
+
+        - SN/DQR碼（如 SN123456、DQR-789）→ 【SN碼】
+
+        - 刀具/治具參數（如 T19刀具、0.1mm間隙）→ 【刀具型號】或【參數值】
+
+        - 具體數量/不良率（如 120pcs、50pcs、F/R 0.5%）→ 【數量】或【不良率】
+
+        - 批次號/工單號 → 【批次號】
+
+
+        ## 嚴格限制
+
+        1. 絕對保留原意、因果邏輯與原本的標號
+
+        2. 未涉及具體數據的推理句必須一字不改地保留
+
+        3. 除了替換數據，絕對不允許重新造句或改變句型結構
+
+        4. 只輸出「#AI推理」之後的內容，不要包含「#資料分析」部分
+
+
+        【待脫敏內容】
+
+        {{reason_result}}'
+      input_vars:
+      - reason_result
+      output_var: final_result
 context_graph:
-  generation_order: ["ISSUE_ANALYSIS", "ROOT_CAUSE", "CONTAINMENT", "CORRECTIVE"]
+  generation_order:
+  - ISSUE_ANALYSIS
+  - ROOT_CAUSE
+  - CONTAINMENT
+  - CORRECTIVE
   dependencies:
     ISSUE_ANALYSIS: []
-    ROOT_CAUSE: ["ISSUE_ANALYSIS"]
-    CONTAINMENT: ["ISSUE_ANALYSIS", "ROOT_CAUSE"]
-    CORRECTIVE: ["ISSUE_ANALYSIS", "ROOT_CAUSE", "CONTAINMENT"]
-  downstream:
-    ISSUE_ANALYSIS: ["ROOT_CAUSE", "CONTAINMENT", "CORRECTIVE"]
-    ROOT_CAUSE: ["CONTAINMENT", "CORRECTIVE"]
-    CONTAINMENT: ["CORRECTIVE"]
-    CORRECTIVE: []
-  first_turn_disclaimers: ["ISSUE_ANALYSIS", "ROOT_CAUSE"]
-
-# ── Section 5: Font size configuration ────────────────────────────────────────
-font_config:
-  title_size: 24      # 标题字号 (REPORT_TITLE, REPORT_SUBTITLE)
-  content_size: 12    # 内容字号 (Meta Data + AI 生成内容)
-  label_size: 12      # 其余字号 (表格标题、标签等)
-
-  # 占位符分类
-  title_placeholders:
-    - REPORT_TITLE
-
-  content_placeholders:
-    - FILE_NAME
-    - IPAD_MODEL
-    - BUILD
-    - IPAD_TYPE
-    - PROCESS
-    - REPORTER
-    - KEYWORDS
-    - ISSUE_DESCRIPTION
+    ROOT_CAUSE:
+    - ISSUE_ANALYSIS
+    CONTAINMENT:
+    - ISSUE_ANALYSIS
+    - ROOT_CAUSE
+    CORRECTIVE:
     - ISSUE_ANALYSIS
     - ROOT_CAUSE
     - CONTAINMENT
+  downstream:
+    ISSUE_ANALYSIS:
+    - ROOT_CAUSE
+    - CONTAINMENT
     - CORRECTIVE
+    ROOT_CAUSE:
+    - CONTAINMENT
+    - CORRECTIVE
+    CONTAINMENT:
+    - CORRECTIVE
+    CORRECTIVE: []
+  first_turn_disclaimers:
+  - ISSUE_ANALYSIS
+  - ROOT_CAUSE
+font_config:
+  title_size: 24
+  content_size: 12
+  label_size: 12
+  title_placeholders:
+  - REPORT_TITLE
+  content_placeholders:
+  - FILE_NAME
+  - IPAD_MODEL
+  - BUILD
+  - IPAD_TYPE
+  - PROCESS
+  - REPORTER
+  - KEYWORDS
+  - ISSUE_DESCRIPTION
+  - ISSUE_ANALYSIS
+  - ROOT_CAUSE
+  - CONTAINMENT
+  - CORRECTIVE
+  - Related_text
+  - Related_text_2
