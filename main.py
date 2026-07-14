@@ -70,7 +70,7 @@ def is_gibberish(text: str) -> str | None:
     if len(cleaned) / max(len(text), 1) < 0.2:
         return "输入内容无效，请提供有意义的描述"
 
-    if re.search(r'(.)\1{4,}', text):
+    if re.search(r'([^a-zA-Z0-9])\1{4,}', text):
         return "检测到重复字符，请提供有效信息"
 
     # 键盘连击模式（扩展列表）

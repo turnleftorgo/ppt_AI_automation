@@ -3,12 +3,12 @@ services:
     build: .
     ports:
       - "3015:3001"
+    env_file:
+      - .env
     volumes:
-    - ./templates:/app/templates                                                
-    - ./.env:/app/.env:ro                                                       
-    - ./core:/app/core                                                          
-    - ./models:/app/models                                                      
-    - ./static:/app/static                                                      
-    - ./test:/app/test                                                          
-    - ./main.py:/app/main.py 
+      - ./templates:/app/templates
+      - ./core:/app/core
+      - ./models:/app/models
+      - ./static:/app/static
+      - ./main.py:/app/main.py
     restart: unless-stopped

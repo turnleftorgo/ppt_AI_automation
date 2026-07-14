@@ -1,0 +1,15 @@
+.git
+.gitignore
+.vscode
+__pycache__
+*.pyc
+*.pyo
+.DS_Store
+.env
+.env.*
+Dockerfile
+docker-compose.yml
+README.md
+Engineering_drawing.md
+main.py.back
+test/

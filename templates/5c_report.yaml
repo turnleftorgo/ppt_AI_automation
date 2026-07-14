@@ -75,6 +75,99 @@ llm_tasks:
       報告主題: {{issue_title}}
     use_rag: true
     rag_tag: "faca_kb"
+    multi_turn_prompt: "# Task / 多輪調整\n\n你剛才在 reason 步驟生成的【圍堵對策】已經過 sanitize 脫敏處理，用戶當前在介面上看到並要調整的內容如下。請基於你 reason 步驟的完整上下文記憶（含 #資料分析 與 #AI推理 原文）理解用戶意圖，但改寫的對象是「用戶當前看到的脫敏版內容」，而不是你 reason 步驟的原文。\n\n## 用戶當前看到的內容（脫敏版）\n{{current_content}}\n\n## 用戶的新指令\n{{user_message}}\n\n## 規則\n1. 保留脫敏佔位符風格（【日期】【線體編號】【SN碼】【刀具型號】【數量】【不良率】【批次號】等），不要還原成具體數據\n2. 遵守原 reason 步驟的寫作風格與結構要求（編號步驟、動賓結構開頭、行業黑話中英夾雜）\n3. 只改寫用戶指令涉及的部分，其餘保持不變\n\n## 輸出格式\n嚴格返回 JSON 對象，絕不輸出 markdown 標記：\n- \"ack\": 如果用戶在探討方案、詢問原因、討論可能性，ack 可以詳細解釋，不限字數；如果是修改指令，ack 簡短回應（不超過 50 字）\n- \"content\": 僅當用戶明確要求修改內容時才返回此字段。改寫後的【圍堵對策】文本，使用 \\n 處理換行\n"
+    pipeline:
+      enabled: true
+      steps:
+        - name: extract
+          prompt: |
+            # Task / 資料提取
+
+            你是一位資料檢索專家。請從以下【知識庫檢索結果】中，提取與「圍堵對策」直接相關的資料片段。
+
+            ## 提取規則
+            1. 只提取與「圍堵措施/Containment」相關的內容（如：物料管控、Sorting方法、攔截指令、歷史案例中的圍堵段落）
+            2. 原封不動提取原文，不改寫、不總結、不推測
+            3. 每條資料獨立編號，格式：1. xxx 2. xxx ...
+            4. 如果沒有相關資料，輸出「無相關資料」
+
+            ## 輸出格式
+            嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+            - "ack": "已從知識庫提取 N 條相關資料"
+            - "content": "#資料分析\n1. xxx\n2. xxx\n..."
+
+            【知識庫檢索結果】
+            {{rag_context}}
+          input_vars:
+            - rag_context
+          output_var: extract_result
+        - name: reason
+          prompt: "# Task / 任務\n請根據【問題描述】與【參考資料】，撰寫 Containment Actions（圍堵對策）。\n\n## 參考資料（來自知識庫）\n{{extract_result}}\n\n## 上下文背景\n{{context_background}}\n\n## 寫作規則\n1. 三維清查指令：嚴格區分「已出貨/客戶端(FAE隨線全檢/Sorting)」、「廠內庫存/扣貨(系統 Hold/鎖2D碼)」、「在製品 WIP(產線停線排查)」。\n2. 檢驗標準規範：明確 Sorting 所需的手段（放大鏡/CCD/Go-NoGo夾具）。\n3. 標識要求：全檢 OK 品外箱必須有專屬清晰標示，防止混料。\n\n## 輸出格式\n嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：\n- \"ack\": 簡短回應（不超過 50 字），確認你理解了異常範圍與對應的物料攔截重點。\n- \"content\": |\n    #資料分析\n    （原封不動把上面「參考資料」的內容放上來）\n\n    #AI推理\n    （你生成的圍堵對策，條列式，動賓結構開頭，行業黑話中英夾雜，控制在120字左右）\n\n【輸入區】\n問題描述: {{issue_description}}\n報告主題: {{issue_title}}\n"
+          input_vars:
+            - extract_result
+            - context_background
+            - issue_description
+            - issue_title
+          output_var: reason_result
+        - name: sanitize
+          prompt: '# Task / 資料脫敏
+
+
+            請從以下內容中提取「#AI推理」部分，並將具體數據替換為佔位符，生成脫敏版本。
+
+
+            ## 處理步驟
+
+            1. 首先，從輸入內容中找到「#AI推理」或「# AI推理」標記
+
+            2. 如果找到該標記，只提取標記之後的內容（不要包含「#資料分析」部分）
+
+            3. 如果找不到該標記，直接對整個輸入內容進行脫敏
+
+            4. 對提取的內容進行數據脫敏
+
+
+            ## 替換規則（嚴格執行）
+
+            - 日期/時間（如 10/28、2024-01-15、10:30）→ 【日期】
+
+            - 線體/機台編號（如 M1線、18#機台、CNC6）→ 【線體編號】或【機台編號】
+
+            - SN/DQR碼（如 SN123456、DQR-789）→ 【SN碼】
+
+            - 刀具/治具參數（如 T19刀具、0.1mm間隙）→ 【刀具型號】或【參數值】
+
+            - 具體數量/不良率（如 120pcs、50pcs、F/R 0.5%）→ 【數量】或【不良率】
+
+            - 批次號/工單號 → 【批次號】
+
+            - 指標名稱（如 Cell NDA、WF NDA）保留，只替換數值
+
+
+            ## 範例
+
+            輸入：不良率：Cell NDA 33.3%（25/75）
+
+            輸出：不良率：Cell NDA 【不良率】（【數量】）
+
+
+            ## 嚴格限制
+
+            1. 絕對保留原意、因果邏輯與原本的標號
+
+            2. 未涉及具體數據的推理句必須一字不改地保留
+
+            3. 除了替換數據，絕對不允許重新造句或改變句型結構
+
+            4. 只輸出脫敏後的最終內容，絕對不要輸出你的推理過程、猶豫或自我糾正
+
+
+            【待脫敏內容】
+
+            {{reason_result}}'
+          input_vars:
+            - reason_result
+          output_var: final_result
 
   # Cause module - Root Cause (專注物理產生原因)
   - target_placeholder: "Fill_in_list_of_root_cause"
@@ -98,6 +191,100 @@ llm_tasks:
       圍堵對策: {{context_Fill_in_list_of_containment_actions}}
     use_rag: true
     rag_tag: "faca_kb"
+    multi_turn_prompt: "# Task / 多輪調整\n\n你剛才在 reason 步驟生成的【物理根因】已經過 sanitize 脫敏處理，用戶當前在介面上看到並要調整的內容如下。請基於你 reason 步驟的完整上下文記憶（含 #資料分析 與 #AI推理 原文）理解用戶意圖，但改寫的對象是「用戶當前看到的脫敏版內容」，而不是你 reason 步驟的原文。\n\n## 用戶當前看到的內容（脫敏版）\n{{current_content}}\n\n## 用戶的新指令\n{{user_message}}\n\n## 規則\n1. 保留脫敏佔位符風格（【日期】【線體編號】【SN碼】【刀具型號】【數量】【不良率】【批次號】等），不要還原成具體數據\n2. 遵守原 reason 步驟的寫作風格與結構要求（因果鏈條表達、行業黑話中英夾雜）\n3. 只改寫用戶指令涉及的部分，其餘保持不變\n\n## 輸出格式\n嚴格返回 JSON 對象，絕不輸出 markdown 標記：\n- \"ack\": 如果用戶在探討方案、詢問原因、討論可能性，ack 可以詳細解釋，不限字數；如果是修改指令，ack 簡短回應（不超過 50 字）\n- \"content\": 僅當用戶明確要求修改內容時才返回此字段。改寫後的【物理根因】文本，使用 \\n 處理換行\n"
+    pipeline:
+      enabled: true
+      steps:
+        - name: extract
+          prompt: |
+            # Task / 資料提取
+
+            你是一位資料檢索專家。請從以下【知識庫檢索結果】中，提取與「物理根因分析」直接相關的資料片段。
+
+            ## 提取規則
+            1. 只提取與「Root Cause/物理根因」相關的內容（如：失效機制、物理損壞原因、工藝參數異常、歷史案例中的根因段落）
+            2. 原封不動提取原文，不改寫、不總結、不推測
+            3. 每條資料獨立編號，格式：1. xxx 2. xxx ...
+            4. 如果沒有相關資料，輸出「無相關資料」
+
+            ## 輸出格式
+            嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+            - "ack": "已從知識庫提取 N 條相關資料"
+            - "content": "#資料分析\n1. xxx\n2. xxx\n..."
+
+            【知識庫檢索結果】
+            {{rag_context}}
+          input_vars:
+            - rag_context
+          output_var: extract_result
+        - name: reason
+          prompt: "# Task / 任務\n請根據【問題描述】、【圍堵對策】與【參考資料】，專注提煉出產品損壞的【Root Cause (產生根本原因)】。\n\n## 參考資料（來自知識庫）\n{{extract_result}}\n\n## 上下文背景\n{{context_background}}\n\n## 寫作規則\n1. 純物理/化學歸因：排除一切流程討論，只解答「產品在該機台/工站具體是受了甚麼物理外力、化學腐蝕、定位干涉或參數漂移造成 NG 的」。\n2. 句式嚴謹：使用簡潔的「A狀態發生異常 -> 導致B現象 -> 造成C不良」的因果鏈條表達。\n3. 剔除推測詞：禁止出現「懷疑、可能」，給出確定性判斷。\n\n## 輸出格式\n嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：\n- \"ack\": 簡短回應（不超過 50 字），確認你已提煉出核心物理/工藝根因。\n- \"content\": |\n    #資料分析\n    （原封不動把上面「參考資料」的內容放上來）\n\n    #AI推理\n    （你生成的物理根因分析，因果鏈條表達，冷峻客觀，控制在100字左右）\n\n【輸入區】\n問題描述: {{issue_description}}\n報告主題: {{issue_title}}\n圍堵對策: {{context_Fill_in_list_of_containment_actions}}\n"
+          input_vars:
+            - extract_result
+            - context_background
+            - issue_description
+            - issue_title
+            - context_Fill_in_list_of_containment_actions
+          output_var: reason_result
+        - name: sanitize
+          prompt: '# Task / 資料脫敏
+
+
+            請從以下內容中提取「#AI推理」部分，並將具體數據替換為佔位符，生成脫敏版本。
+
+
+            ## 處理步驟
+
+            1. 首先，從輸入內容中找到「#AI推理」或「# AI推理」標記
+
+            2. 如果找到該標記，只提取標記之後的內容（不要包含「#資料分析」部分）
+
+            3. 如果找不到該標記，直接對整個輸入內容進行脫敏
+
+            4. 對提取的內容進行數據脫敏
+
+
+            ## 替換規則（嚴格執行）
+
+            - 日期/時間（如 10/28、2024-01-15、10:30）→ 【日期】
+
+            - 線體/機台編號（如 M1線、18#機台、CNC6）→ 【線體編號】或【機台編號】
+
+            - SN/DQR碼（如 SN123456、DQR-789）→ 【SN碼】
+
+            - 刀具/治具參數（如 T19刀具、0.1mm間隙）→ 【刀具型號】或【參數值】
+
+            - 具體數量/不良率（如 120pcs、50pcs、F/R 0.5%）→ 【數量】或【不良率】
+
+            - 批次號/工單號 → 【批次號】
+
+            - 指標名稱（如 Cell NDA、WF NDA）保留，只替換數值
+
+
+            ## 範例
+
+            輸入：不良率：Cell NDA 33.3%（25/75）
+
+            輸出：不良率：Cell NDA 【不良率】（【數量】）
+
+
+            ## 嚴格限制
+
+            1. 絕對保留原意、因果邏輯與原本的標號
+
+            2. 未涉及具體數據的推理句必須一字不改地保留
+
+            3. 除了替換數據，絕對不允許重新造句或改變句型結構
+
+            4. 只輸出脫敏後的最終內容，絕對不要輸出你的推理過程、猶豫或自我糾正
+
+
+            【待脫敏內容】
+
+            {{reason_result}}'
+          input_vars:
+            - reason_result
+          output_var: final_result
 
   # Cause module - Escape Cause (專注防線流出原因)
   - target_placeholder: "Fill_in_list_of_escape_causes"
@@ -120,6 +307,100 @@ llm_tasks:
       圍堵對策: {{context_Fill_in_list_of_containment_actions}}
     use_rag: true
     rag_tag: "faca_kb"
+    multi_turn_prompt: "# Task / 多輪調整\n\n你剛才在 reason 步驟生成的【流出原因】已經過 sanitize 脫敏處理，用戶當前在介面上看到並要調整的內容如下。請基於你 reason 步驟的完整上下文記憶（含 #資料分析 與 #AI推理 原文）理解用戶意圖，但改寫的對象是「用戶當前看到的脫敏版內容」，而不是你 reason 步驟的原文。\n\n## 用戶當前看到的內容（脫敏版）\n{{current_content}}\n\n## 用戶的新指令\n{{user_message}}\n\n## 規則\n1. 保留脫敏佔位符風格（【日期】【線體編號】【SN碼】【刀具型號】【數量】【不良率】【批次號】等），不要還原成具體數據\n2. 遵守原 reason 步驟的寫作風格與結構要求（品管黑話、AOI/FQC/AQL 術語）\n3. 只改寫用戶指令涉及的部分，其餘保持不變\n\n## 輸出格式\n嚴格返回 JSON 對象，絕不輸出 markdown 標記：\n- \"ack\": 如果用戶在探討方案、詢問原因、討論可能性，ack 可以詳細解釋，不限字數；如果是修改指令，ack 簡短回應（不超過 50 字）\n- \"content\": 僅當用戶明確要求修改內容時才返回此字段。改寫後的【流出原因】文本，使用 \\n 處理換行\n"
+    pipeline:
+      enabled: true
+      steps:
+        - name: extract
+          prompt: |
+            # Task / 資料提取
+
+            你是一位資料檢索專家。請從以下【知識庫檢索結果】中，提取與「流出原因分析」直接相關的資料片段。
+
+            ## 提取規則
+            1. 只提取與「Escape Cause/流出原因/漏檢」相關的內容（如：防線失效、AOI漏檢、FQC盲區、歷史案例中的流出原因段落）
+            2. 原封不動提取原文，不改寫、不總結、不推測
+            3. 每條資料獨立編號，格式：1. xxx 2. xxx ...
+            4. 如果沒有相關資料，輸出「無相關資料」
+
+            ## 輸出格式
+            嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+            - "ack": "已從知識庫提取 N 條相關資料"
+            - "content": "#資料分析\n1. xxx\n2. xxx\n..."
+
+            【知識庫檢索結果】
+            {{rag_context}}
+          input_vars:
+            - rag_context
+          output_var: extract_result
+        - name: reason
+          prompt: "# Task / 任務\n請根據【問題描述】、【圍堵對策】與【參考資料】，單獨分析為什麼該不良未能及時攔截，撰寫【Escape Cause (流出/漏出原因)】。\n\n## 參考資料（來自知識庫）\n{{extract_result}}\n\n## 上下文背景\n{{context_background}}\n\n## 寫作規則\n1. 防線失效定位：明確指出具體是哪一道品管或自動化防線失效（如：AOI 視覺系統未錄入該 NG 特徵範本；FQC 目視檢驗有盲區；抽檢 AQL 頻率過低未能覆蓋偶發缺陷）。\n2. 系統性歸因：指出量測設備、檢驗標準或 SOP 指導書的客觀缺失。\n\n## 輸出格式\n嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：\n- \"ack\": 簡短回應（不超過 50 字），確認已鎖定品管漏檢與防線缺失節點。\n- \"content\": |\n    #資料分析\n    （原封不動把上面「參考資料」的內容放上來）\n\n    #AI推理\n    （你生成的流出原因分析，品管黑話豐富，控制在100字左右）\n\n【輸入區】\n問題描述: {{issue_description}}\n報告主題: {{issue_title}}\n圍堵對策: {{context_Fill_in_list_of_containment_actions}}\n"
+          input_vars:
+            - extract_result
+            - context_background
+            - issue_description
+            - issue_title
+            - context_Fill_in_list_of_containment_actions
+          output_var: reason_result
+        - name: sanitize
+          prompt: '# Task / 資料脫敏
+
+
+            請從以下內容中提取「#AI推理」部分，並將具體數據替換為佔位符，生成脫敏版本。
+
+
+            ## 處理步驟
+
+            1. 首先，從輸入內容中找到「#AI推理」或「# AI推理」標記
+
+            2. 如果找到該標記，只提取標記之後的內容（不要包含「#資料分析」部分）
+
+            3. 如果找不到該標記，直接對整個輸入內容進行脫敏
+
+            4. 對提取的內容進行數據脫敏
+
+
+            ## 替換規則（嚴格執行）
+
+            - 日期/時間（如 10/28、2024-01-15、10:30）→ 【日期】
+
+            - 線體/機台編號（如 M1線、18#機台、CNC6）→ 【線體編號】或【機台編號】
+
+            - SN/DQR碼（如 SN123456、DQR-789）→ 【SN碼】
+
+            - 刀具/治具參數（如 T19刀具、0.1mm間隙）→ 【刀具型號】或【參數值】
+
+            - 具體數量/不良率（如 120pcs、50pcs、F/R 0.5%）→ 【數量】或【不良率】
+
+            - 批次號/工單號 → 【批次號】
+
+            - 指標名稱（如 Cell NDA、WF NDA）保留，只替換數值
+
+
+            ## 範例
+
+            輸入：不良率：Cell NDA 33.3%（25/75）
+
+            輸出：不良率：Cell NDA 【不良率】（【數量】）
+
+
+            ## 嚴格限制
+
+            1. 絕對保留原意、因果邏輯與原本的標號
+
+            2. 未涉及具體數據的推理句必須一字不改地保留
+
+            3. 除了替換數據，絕對不允許重新造句或改變句型結構
+
+            4. 只輸出脫敏後的最終內容，絕對不要輸出你的推理過程、猶豫或自我糾正
+
+
+            【待脫敏內容】
+
+            {{reason_result}}'
+          input_vars:
+            - reason_result
+          output_var: final_result
 
   # Corrective module - Corrective Actions (針對 Root Cause 治本)
   - target_placeholder: "Fill_in_list_of_corrective_actions"
@@ -143,6 +424,101 @@ llm_tasks:
       流出原因: {{context_Fill_in_list_of_escape_causes}}
     use_rag: true
     rag_tag: "faca_kb"
+    multi_turn_prompt: "# Task / 多輪調整\n\n你剛才在 reason 步驟生成的【糾正措施】已經過 sanitize 脫敏處理，用戶當前在介面上看到並要調整的內容如下。請基於你 reason 步驟的完整上下文記憶（含 #資料分析 與 #AI推理 原文）理解用戶意圖，但改寫的對象是「用戶當前看到的脫敏版內容」，而不是你 reason 步驟的原文。\n\n## 用戶當前看到的內容（脫敏版）\n{{current_content}}\n\n## 用戶的新指令\n{{user_message}}\n\n## 規則\n1. 保留脫敏佔位符風格（【日期】【線體編號】【SN碼】【刀具型號】【數量】【不良率】【批次號】等），不要還原成具體數據\n2. 遵守原 reason 步驟的寫作風格與結構要求（編號步驟、祈使動詞開頭、工程黑話中英夾雜）\n3. 只改寫用戶指令涉及的部分，其餘保持不變\n\n## 輸出格式\n嚴格返回 JSON 對象，絕不輸出 markdown 標記：\n- \"ack\": 如果用戶在探討方案、詢問原因、討論可能性，ack 可以詳細解釋，不限字數；如果是修改指令，ack 簡短回應（不超過 50 字）\n- \"content\": 僅當用戶明確要求修改內容時才返回此字段。改寫後的【糾正措施】文本，使用 \\n 處理換行\n"
+    pipeline:
+      enabled: true
+      steps:
+        - name: extract
+          prompt: |
+            # Task / 資料提取
+
+            你是一位資料檢索專家。請從以下【知識庫檢索結果】中，提取與「改善對策/糾正措施」直接相關的資料片段。
+
+            ## 提取規則
+            1. 只提取與「Corrective Action/糾正措施/防呆改造」相關的內容（如：治具修改、機台防呆、參數優化、歷史案例中的對策段落）
+            2. 原封不動提取原文，不改寫、不總結、不推測
+            3. 每條資料獨立編號，格式：1. xxx 2. xxx ...
+            4. 如果沒有相關資料，輸出「無相關資料」
+
+            ## 輸出格式
+            嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+            - "ack": "已從知識庫提取 N 條相關資料"
+            - "content": "#資料分析\n1. xxx\n2. xxx\n..."
+
+            【知識庫檢索結果】
+            {{rag_context}}
+          input_vars:
+            - rag_context
+          output_var: extract_result
+        - name: reason
+          prompt: "# Task / 任務\n請根據【問題描述】、【物理根因】、【流出原因】與【參考資料】，給出物理/設備層面的永久改善對策 (Corrective Action)。\n\n## 參考資料（來自知識庫）\n{{extract_result}}\n\n## 上下文背景\n{{context_background}}\n\n## 寫作規則\n1. 工程防呆化：提出修改治具避位、機台加裝壓力/位置感應器（Sensor）聯鎖停機、優化切削/點膠參數等物理防呆改造。\n2. 具體可落地：明確改善的時間節點、工程手段，直接消除產生不良的根源。\n\n## 輸出格式\n嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：\n- \"ack\": 簡短回應（不超過 50 字），確認針對物理根因擬定工程防呆改造。\n- \"content\": |\n    #資料分析\n    （原封不動把上面「參考資料」的內容放上來）\n\n    #AI推理\n    （你生成的糾正措施，條列式，祈使動詞開頭，工程黑話濃郁，控制在100字左右）\n\n【輸入區】\n問題描述: {{issue_description}}\n報告主題: {{issue_title}}\n物理根因: {{context_Fill_in_list_of_root_cause}}\n流出原因: {{context_Fill_in_list_of_escape_causes}}\n"
+          input_vars:
+            - extract_result
+            - context_background
+            - issue_description
+            - issue_title
+            - context_Fill_in_list_of_root_cause
+            - context_Fill_in_list_of_escape_causes
+          output_var: reason_result
+        - name: sanitize
+          prompt: '# Task / 資料脫敏
+
+
+            請從以下內容中提取「#AI推理」部分，並將具體數據替換為佔位符，生成脫敏版本。
+
+
+            ## 處理步驟
+
+            1. 首先，從輸入內容中找到「#AI推理」或「# AI推理」標記
+
+            2. 如果找到該標記，只提取標記之後的內容（不要包含「#資料分析」部分）
+
+            3. 如果找不到該標記，直接對整個輸入內容進行脫敏
+
+            4. 對提取的內容進行數據脫敏
+
+
+            ## 替換規則（嚴格執行）
+
+            - 日期/時間（如 10/28、2024-01-15、10:30）→ 【日期】
+
+            - 線體/機台編號（如 M1線、18#機台、CNC6）→ 【線體編號】或【機台編號】
+
+            - SN/DQR碼（如 SN123456、DQR-789）→ 【SN碼】
+
+            - 刀具/治具參數（如 T19刀具、0.1mm間隙）→ 【刀具型號】或【參數值】
+
+            - 具體數量/不良率（如 120pcs、50pcs、F/R 0.5%）→ 【數量】或【不良率】
+
+            - 批次號/工單號 → 【批次號】
+
+            - 指標名稱（如 Cell NDA、WF NDA）保留，只替換數值
+
+
+            ## 範例
+
+            輸入：不良率：Cell NDA 33.3%（25/75）
+
+            輸出：不良率：Cell NDA 【不良率】（【數量】）
+
+
+            ## 嚴格限制
+
+            1. 絕對保留原意、因果邏輯與原本的標號
+
+            2. 未涉及具體數據的推理句必須一字不改地保留
+
+            3. 除了替換數據，絕對不允許重新造句或改變句型結構
+
+            4. 只輸出脫敏後的最終內容，絕對不要輸出你的推理過程、猶豫或自我糾正
+
+
+            【待脫敏內容】
+
+            {{reason_result}}'
+          input_vars:
+            - reason_result
+          output_var: final_result
 
   # Corrective module - Preventive Actions (針對 Escape Cause 橫向防範)
   - target_placeholder: "Fill_in_list_of_preventive_actions"
@@ -166,6 +542,101 @@ llm_tasks:
       糾正措施: {{context_Fill_in_list_of_corrective_actions}}
     use_rag: true
     rag_tag: "faca_kb"
+    multi_turn_prompt: "# Task / 多輪調整\n\n你剛才在 reason 步驟生成的【預防措施】已經過 sanitize 脫敏處理，用戶當前在介面上看到並要調整的內容如下。請基於你 reason 步驟的完整上下文記憶（含 #資料分析 與 #AI推理 原文）理解用戶意圖，但改寫的對象是「用戶當前看到的脫敏版內容」，而不是你 reason 步驟的原文。\n\n## 用戶當前看到的內容（脫敏版）\n{{current_content}}\n\n## 用戶的新指令\n{{user_message}}\n\n## 規則\n1. 保留脫敏佔位符風格（【日期】【線體編號】【SN碼】【刀具型號】【數量】【不良率】【批次號】等），不要還原成具體數據\n2. 遵守原 reason 步驟的寫作風格與結構要求（管理與品管術語、Read-Across/OPL/AOI/AQL）\n3. 只改寫用戶指令涉及的部分，其餘保持不變\n\n## 輸出格式\n嚴格返回 JSON 對象，絕不輸出 markdown 標記：\n- \"ack\": 如果用戶在探討方案、詢問原因、討論可能性，ack 可以詳細解釋，不限字數；如果是修改指令，ack 簡短回應（不超過 50 字）\n- \"content\": 僅當用戶明確要求修改內容時才返回此字段。改寫後的【預防措施】文本，使用 \\n 處理換行\n"
+    pipeline:
+      enabled: true
+      steps:
+        - name: extract
+          prompt: |
+            # Task / 資料提取
+
+            你是一位資料檢索專家。請從以下【知識庫檢索結果】中，提取與「預防措施/系統預防」直接相關的資料片段。
+
+            ## 提取規則
+            1. 只提取與「Preventive Action/預防措施/橫向展開」相關的內容（如：Read-Across、檢驗升級、SOP優化、歷史案例中的預防段落）
+            2. 原封不動提取原文，不改寫、不總結、不推測
+            3. 每條資料獨立編號，格式：1. xxx 2. xxx ...
+            4. 如果沒有相關資料，輸出「無相關資料」
+
+            ## 輸出格式
+            嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：
+            - "ack": "已從知識庫提取 N 條相關資料"
+            - "content": "#資料分析\n1. xxx\n2. xxx\n..."
+
+            【知識庫檢索結果】
+            {{rag_context}}
+          input_vars:
+            - rag_context
+          output_var: extract_result
+        - name: reason
+          prompt: "# Task / 任務\n請根據【問題描述】、【流出原因】、【糾正措施】與【參考資料】，給出長效系統預防措施 (Preventive Action)。\n\n## 參考資料（來自知識庫）\n{{extract_result}}\n\n## 上下文背景\n{{context_background}}\n\n## 寫作規則\n1. 橫向平移 (Read-Across)：強制清查廠內所有相似產線、其他專案機種，同步導入物理防呆與檢驗對策。\n2. 檢驗升級與 QC 閘口：將該不良特徵正式納入 AOI 自動化檢測項目；QE 製作單點課程（OPL）對檢驗員進行培訓與盲測；出貨端 OQC 加嚴 AQL 抽樣標準（如由 0.65 降至 0.4）。\n\n## 輸出格式\n嚴格返回 JSON 對象，包含兩個字段，絕不輸出 markdown 標記（如 ```json）：\n- \"ack\": 簡短回應（不超過 50 字），確認落實橫向展開與檢驗防線長效升級。\n- \"content\": |\n    #資料分析\n    （原封不動把上面「參考資料」的內容放上來）\n\n    #AI推理\n    （你生成的預防措施，條列式，管理與品管術語豐富，控制在100字左右）\n\n【輸入區】\n問題描述: {{issue_description}}\n報告主題: {{issue_title}}\n流出原因: {{context_Fill_in_list_of_escape_causes}}\n糾正措施: {{context_Fill_in_list_of_corrective_actions}}\n"
+          input_vars:
+            - extract_result
+            - context_background
+            - issue_description
+            - issue_title
+            - context_Fill_in_list_of_escape_causes
+            - context_Fill_in_list_of_corrective_actions
+          output_var: reason_result
+        - name: sanitize
+          prompt: '# Task / 資料脫敏
+
+
+            請從以下內容中提取「#AI推理」部分，並將具體數據替換為佔位符，生成脫敏版本。
+
+
+            ## 處理步驟
+
+            1. 首先，從輸入內容中找到「#AI推理」或「# AI推理」標記
+
+            2. 如果找到該標記，只提取標記之後的內容（不要包含「#資料分析」部分）
+
+            3. 如果找不到該標記，直接對整個輸入內容進行脫敏
+
+            4. 對提取的內容進行數據脫敏
+
+
+            ## 替換規則（嚴格執行）
+
+            - 日期/時間（如 10/28、2024-01-15、10:30）→ 【日期】
+
+            - 線體/機台編號（如 M1線、18#機台、CNC6）→ 【線體編號】或【機台編號】
+
+            - SN/DQR碼（如 SN123456、DQR-789）→ 【SN碼】
+
+            - 刀具/治具參數（如 T19刀具、0.1mm間隙）→ 【刀具型號】或【參數值】
+
+            - 具體數量/不良率（如 120pcs、50pcs、F/R 0.5%）→ 【數量】或【不良率】
+
+            - 批次號/工單號 → 【批次號】
+
+            - 指標名稱（如 Cell NDA、WF NDA）保留，只替換數值
+
+
+            ## 範例
+
+            輸入：不良率：Cell NDA 33.3%（25/75）
+
+            輸出：不良率：Cell NDA 【不良率】（【數量】）
+
+
+            ## 嚴格限制
+
+            1. 絕對保留原意、因果邏輯與原本的標號
+
+            2. 未涉及具體數據的推理句必須一字不改地保留
+
+            3. 除了替換數據，絕對不允許重新造句或改變句型結構
+
+            4. 只輸出脫敏後的最終內容，絕對不要輸出你的推理過程、猶豫或自我糾正
+
+
+            【待脫敏內容】
+
+            {{reason_result}}'
+          input_vars:
+            - reason_result
+          output_var: final_result
 
 # ── Section 4: Context engineering (dependency graph) ─────────────────────────
 context_graph:
