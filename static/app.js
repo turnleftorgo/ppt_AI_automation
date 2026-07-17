@@ -619,115 +619,86 @@ function renderPreviewTable(config) {
   const container = document.getElementById("previewTable");
   container.innerHTML = "";
   previewFields = [];
-  previewTabs = [];
-  activePreviewTab = null;
 
-  // ── Collect tabs in display order: llm_tasks (in YAML order) first, closure last ──
+  let html = `<table class="w-full bg-white rounded-xl shadow overflow-hidden text-sm">
+    <thead>
+      <tr class="bg-gray-50 text-gray-600">
+        <th class="text-left px-4 py-3 font-semibold w-2/5">Field</th>
+        <th class="text-left px-4 py-3 font-semibold">Content</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  // ── AI task groups (grouped by module) ──
   const llmTasks = config.llm_tasks || [];
-  for (const task of llmTasks) {
-    const key = `preview-ai-${cssId(task.target_placeholder)}`;
-    const tab = {
-      sourceKey: task.target_placeholder,
-      key,
-      label: task.module_label || task.target_placeholder,
-      source: "chatHistory",
-      hasExtract: true,
-      accent: "purple",
-    };
-    previewTabs.push(tab);
-    previewFields.push({
-      key,
-      label: task.target_placeholder,
-      source: "chatHistory",
-      sourceKey: task.target_placeholder,
-    });
+  if (llmTasks.length > 0) {
+    const modules = {};
+    for (const task of llmTasks) {
+      const mod = task.module || "default";
+      if (!modules[mod]) modules[mod] = { label: task.module_label || mod, tasks: [] };
+      modules[mod].tasks.push(task);
+    }
+
+    for (const [modKey, mod] of Object.entries(modules)) {
+      html += `<tr class="bg-purple-50"><td colspan="2" class="px-4 py-2 font-semibold text-purple-700">${escapeHtml(mod.label)}</td></tr>`;
+      for (const task of mod.tasks) {
+        const key = `preview-ai-${cssId(task.target_placeholder)}`;
+        previewFields.push({ key, label: task.target_placeholder, source: "chatHistory", sourceKey: task.target_placeholder });
+        html += `<tr class="border-t border-gray-100 align-top" id="row-${cssId(task.target_placeholder)}">
+          <td class="px-4 py-3 text-gray-600 font-mono text-xs">${escapeHtml(task.target_placeholder)}</td>
+          <td class="px-4 py-2">
+            <textarea id="${key}" rows="14" data-source="chatHistory" data-source-key="${escapeJs(task.target_placeholder)}"
+                      oninput="handlePreviewEdit(this)"
+                      class="w-full border border-gray-200 rounded px-2 py-1.5 text-sm resize-y
+                             focus:ring-2 focus:ring-purple-400 focus:border-transparent bg-white"
+                      placeholder="待生成..."></textarea>
+            <details id="extract-${cssId(task.target_placeholder)}" class="mt-2 hidden">
+              <summary class="cursor-pointer text-xs text-purple-600 hover:text-purple-800 select-none">
+                ▶ 资料整理
+              </summary>
+              <div class="mt-1 p-2 bg-purple-50 rounded text-xs text-gray-700 whitespace-pre-wrap max-h-48 overflow-y-auto"></div>
+            </details>
+          </td>
+        </tr>`;
+      }
+    }
   }
 
+  // ── Closure group ──
   const closureTasks = config.closure_tasks || [];
-  for (const task of closureTasks) {
-    const key = `preview-closure-${cssId(task.target_placeholder)}`;
-    const tab = {
-      sourceKey: task.target_placeholder,
-      key,
-      label: task.label || task.target_placeholder,
-      source: "chatHistory",
-      hasExtract: false,
-      accent: "green",
-    };
-    previewTabs.push(tab);
-    previewFields.push({
-      key,
-      label: task.label || task.target_placeholder,
-      source: "chatHistory",
-      sourceKey: task.target_placeholder,
-    });
+  if (closureTasks.length > 0) {
+    html += `<tr class="bg-green-50"><td colspan="2" class="px-4 py-2 font-semibold text-green-700">Closure</td></tr>`;
+    for (const task of closureTasks) {
+      const key = `preview-closure-${cssId(task.target_placeholder)}`;
+      previewFields.push({ key, label: task.label || task.target_placeholder, source: "chatHistory", sourceKey: task.target_placeholder });
+      html += `<tr class="border-t border-gray-100 align-top" id="row-${cssId(task.target_placeholder)}">
+        <td class="px-4 py-3 text-gray-600">${escapeHtml(task.label || task.target_placeholder)}</td>
+        <td class="px-4 py-2">
+          <textarea id="${key}" rows="14" data-source="chatHistory" data-source-key="${escapeJs(task.target_placeholder)}"
+                    oninput="handlePreviewEdit(this)"
+                    class="w-full border border-gray-200 rounded px-2 py-1.5 text-sm resize-y
+                           focus:ring-2 focus:ring-green-400 focus:border-transparent bg-white"
+                    placeholder="待生成..."></textarea>
+        </td>
+      </tr>`;
+    }
   }
 
-  if (previewTabs.length === 0) {
-    container.innerHTML = '<div class="text-gray-400 text-sm italic">无预览字段</div>';
-    return;
-  }
+  html += `</tbody></table>`;
+  container.innerHTML = html;
 
-  // ── Render tab bar + content container ──
-  const ringColor = "purple"; // default; per-tab override below via data-accent
-  container.innerHTML = `
-    <div class="preview-tabs" id="previewTabBar">
-      ${previewTabs.map(t => `
-        <button class="preview-tab"
-                data-source-key="${escapeJs(t.sourceKey)}"
-                data-accent="${escapeJs(t.accent)}"
-                data-active="false"
-                onclick="switchPreviewTab('${escapeJs(t.sourceKey)}')">
-          ${escapeHtml(t.label)}
-        </button>
-      `).join("")}
-    </div>
-    <div id="previewTabContent" class="flex-1 min-h-0 flex flex-col"></div>
-  `;
-
-  // Default to first tab
-  switchPreviewTab(previewTabs[0].sourceKey);
+  updatePreview();
 }
 
 function switchPreviewTab(sourceKey) {
-  const tab = previewTabs.find(t => t.sourceKey === sourceKey);
-  if (!tab) return;
-  activePreviewTab = sourceKey;
-
-  // Update tab bar highlight
-  document.querySelectorAll(".preview-tab").forEach(btn => {
-    btn.dataset.active = btn.dataset.sourceKey === sourceKey ? "true" : "false";
-  });
-
-  // Render tab content: header + textarea (flex-1) + optional extract panel
-  const content = document.getElementById("previewTabContent");
-  const ringClass = tab.accent === "green" ? "focus:ring-green-400" : "focus:ring-purple-400";
-  content.innerHTML = `
-    <div class="flex flex-col h-full min-h-0">
-      <div class="mb-2 shrink-0 flex items-center gap-2">
-        <span class="px-2 py-0.5 ${tab.accent === "green" ? "bg-green-50 text-green-700" : "bg-purple-100 text-purple-700"} rounded text-xs font-mono">
-          ${escapeHtml(tab.sourceKey)}
-        </span>
-      </div>
-      <textarea id="${tab.key}"
-                data-source="${tab.source}"
-                data-source-key="${escapeJs(sourceKey)}"
-                oninput="handlePreviewEdit(this)"
-                class="flex-1 min-h-0 h-full w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none
-                       focus:ring-2 ${ringClass} focus:border-transparent bg-white font-mono"
-                placeholder="待生成..."></textarea>
-      ${tab.hasExtract ? `
-        <details id="extract-${cssId(sourceKey)}" class="mt-2 shrink-0">
-          <summary class="cursor-pointer text-xs text-purple-600 hover:text-purple-800 select-none">
-            ▶ 资料整理
-          </summary>
-          <div class="mt-1 p-2 bg-purple-50 rounded text-xs text-gray-700 whitespace-pre-wrap max-h-48 overflow-y-auto"></div>
-        </details>` : ""}
-    </div>
-  `;
-
-  // Fill in current value + extract panel
-  updatePreview();
+  const row = document.getElementById(`row-${cssId(sourceKey)}`);
+  if (row) {
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    // Brief highlight effect
+    row.style.transition = "background-color 0.3s ease";
+    row.style.backgroundColor = "#faf5ff";
+    setTimeout(() => { row.style.backgroundColor = ""; }, 1200);
+  }
 }
 
 function handlePreviewEdit(textarea) {
@@ -754,6 +725,14 @@ function handlePreviewEdit(textarea) {
       history.push({ role: "assistant", content: "", fullContent: value });
     }
   }
+}
+
+function formatExtractedData(text) {
+  if (!text) return '';
+  return text
+    .replace(/(\d+)\.\s/g, '<br>$1. ')
+    .replace(/【检索片段/g, '<br>【检索片段')
+    .replace(/^<br>/, '');
 }
 
 function updatePreview() {
@@ -786,7 +765,7 @@ function updatePreview() {
         const found = [...history].reverse().find(m => m.role === "assistant" && m.extractedData);
         if (found) {
           extractEl.classList.remove("hidden");
-          extractEl.querySelector("div").textContent = found.extractedData;
+          extractEl.querySelector("div").innerHTML = formatExtractedData(found.extractedData);
         } else {
           extractEl.classList.add("hidden");
         }
