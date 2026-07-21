@@ -367,22 +367,24 @@ async def export_pptx(req: ExportRequest):
     # AI results + closure inputs
     content_map.update(req.final_data)
 
-    # RAG 参考资料 → Related_text / Related_text_2 占位符（第二页）
-    reference_placeholders = {"Related_text", "Related_text_2"}
+    # RAG 参考资料 → Related_text ~ Related_text_4 占位符（第二页 2 个框、第三页 2 个框，一对一）
+    reference_placeholders = {"Related_text", "Related_text_2", "Related_text_3", "Related_text_4"}
     has_reference_slide = bool(reference_placeholders & set(ppt_core.scan_placeholders(ppt_path)["unique_placeholders"]))
     rag_results = req.rag_results.strip() or _cached_rag_context(req.template_id, req.session_id)
+    placeholder_names = ["Related_text", "Related_text_2", "Related_text_3", "Related_text_4"]
     if rag_results:
         fragments = re.split(r'(?=【检索片段\s*\d+】)', rag_results)
         fragments = [f.strip() for f in fragments if f.strip()]
-        if len(fragments) >= 1:
-            content_map["Related_text"] = fragments[0]
-        if len(fragments) >= 2:
-            content_map["Related_text_2"] = "\n\n".join(fragments[1:])
-        elif has_reference_slide:
-            content_map["Related_text_2"] = ""
+        for name, frag in zip(placeholder_names, fragments[:4]):
+            content_map[name] = frag
+        # 没有对应片段的占位符置空，避免残留 {Related_text_X} 字样
+        if has_reference_slide:
+            for name in placeholder_names[len(fragments[:4]):]:
+                content_map.setdefault(name, "")
     elif has_reference_slide:
         content_map["Related_text"] = "未检索到相关参考资料。"
-        content_map["Related_text_2"] = ""
+        for name in placeholder_names[1:]:
+            content_map[name] = ""
 
     # 拼接标题: 机种｜制程 关键词 FACA
     if "REPORT_TITLE" not in content_map:

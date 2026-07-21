@@ -135,7 +135,7 @@ async function handleTemplateChange(templateId) {
 
   // Render preview table
   document.getElementById("previewTitle").textContent =
-    (currentConfig.template_name || "Report") + " Preview";
+    (currentConfig.template_name || "报告") + " 预览";
   renderPreviewTable(currentConfig);
   rightPanel.classList.remove("hidden");
 }
@@ -381,6 +381,7 @@ async function handleCharacterizeConfirm() {
         content: data.ack || "",
         fullContent: data.content || "",
         extractedData: data.extracted_data || "",
+        ragContext: data.rag_context || "",
       });
       // 更新基线，用于下次检测右侧编辑
       lastBaseline[name] = data.content || "";
@@ -478,6 +479,7 @@ async function handleGenerate(name) {
         content: data.ack || "",
         fullContent: data.content || "",
         extractedData: data.extracted_data || "",
+        ragContext: data.rag_context || "",
       });
       // 更新基线，用于下次检测右侧编辑
       lastBaseline[name] = data.content || "";
@@ -550,6 +552,7 @@ async function handleRegenerate(name) {
       content: data.ack || "",
       fullContent: data.content || "",
       extractedData: data.extracted_data || "",
+      ragContext: data.rag_context || "",
     });
     captureRagContext(data.rag_context);
     renderChatHistory(name);
@@ -621,12 +624,6 @@ function renderPreviewTable(config) {
   previewFields = [];
 
   let html = `<table class="w-full bg-white rounded-xl shadow overflow-hidden text-sm">
-    <thead>
-      <tr class="bg-gray-50 text-gray-600">
-        <th class="text-left px-4 py-3 font-semibold w-2/5">Field</th>
-        <th class="text-left px-4 py-3 font-semibold">Content</th>
-      </tr>
-    </thead>
     <tbody>`;
 
   // ── AI task groups (grouped by module) ──
@@ -640,21 +637,20 @@ function renderPreviewTable(config) {
     }
 
     for (const [modKey, mod] of Object.entries(modules)) {
-      html += `<tr class="bg-purple-50"><td colspan="2" class="px-4 py-2 font-semibold text-purple-700">${escapeHtml(mod.label)}</td></tr>`;
+      html += `<tr class="bg-purple-50"><td class="px-4 py-2 font-semibold text-purple-700">${escapeHtml(mod.label)}</td></tr>`;
       for (const task of mod.tasks) {
         const key = `preview-ai-${cssId(task.target_placeholder)}`;
         previewFields.push({ key, label: task.target_placeholder, source: "chatHistory", sourceKey: task.target_placeholder });
         html += `<tr class="border-t border-gray-100 align-top" id="row-${cssId(task.target_placeholder)}">
-          <td class="px-4 py-3 text-gray-600 font-mono text-xs">${escapeHtml(task.target_placeholder)}</td>
           <td class="px-4 py-2">
             <textarea id="${key}" rows="14" data-source="chatHistory" data-source-key="${escapeJs(task.target_placeholder)}"
                       oninput="handlePreviewEdit(this)"
                       class="w-full border border-gray-200 rounded px-2 py-1.5 text-sm resize-y
                              focus:ring-2 focus:ring-purple-400 focus:border-transparent bg-white"
                       placeholder="待生成..."></textarea>
-            <details id="extract-${cssId(task.target_placeholder)}" class="mt-2 hidden">
+            <details id="ragsrc-${cssId(task.target_placeholder)}" class="mt-2 hidden">
               <summary class="cursor-pointer text-xs text-purple-600 hover:text-purple-800 select-none">
-                ▶ 资料整理
+                ▶ 资料来源
               </summary>
               <div class="mt-1 p-2 bg-purple-50 rounded text-xs text-gray-700 whitespace-pre-wrap max-h-48 overflow-y-auto"></div>
             </details>
@@ -667,12 +663,11 @@ function renderPreviewTable(config) {
   // ── Closure group ──
   const closureTasks = config.closure_tasks || [];
   if (closureTasks.length > 0) {
-    html += `<tr class="bg-green-50"><td colspan="2" class="px-4 py-2 font-semibold text-green-700">Closure</td></tr>`;
+    html += `<tr class="bg-green-50"><td class="px-4 py-2 font-semibold text-green-700">关闭归档</td></tr>`;
     for (const task of closureTasks) {
       const key = `preview-closure-${cssId(task.target_placeholder)}`;
       previewFields.push({ key, label: task.label || task.target_placeholder, source: "chatHistory", sourceKey: task.target_placeholder });
       html += `<tr class="border-t border-gray-100 align-top" id="row-${cssId(task.target_placeholder)}">
-        <td class="px-4 py-3 text-gray-600">${escapeHtml(task.label || task.target_placeholder)}</td>
         <td class="px-4 py-2">
           <textarea id="${key}" rows="14" data-source="chatHistory" data-source-key="${escapeJs(task.target_placeholder)}"
                     oninput="handlePreviewEdit(this)"
@@ -727,12 +722,17 @@ function handlePreviewEdit(textarea) {
   }
 }
 
-function formatExtractedData(text) {
-  if (!text) return '';
-  return text
-    .replace(/(\d+)\.\s/g, '<br>$1. ')
-    .replace(/【检索片段/g, '<br>【检索片段')
-    .replace(/^<br>/, '');
+function formatRagTitles(ragContext) {
+  if (!ragContext) return '';
+  const fragments = ragContext.split(/(?=【检索片段\s*\d+】)/).filter(s => s.trim());
+  if (fragments.length === 0) return '';
+  return fragments.map(frag => {
+    const caseMatch = frag.match(/Case[：:]\s*(.+)/);
+    const reporterMatch = frag.match(/(?:报告人|報告人)[：:]\s*(.+)/);
+    const title = caseMatch ? caseMatch[1].trim() : frag.slice(0, 40) + '...';
+    const reporter = reporterMatch ? reporterMatch[1].trim() : '';
+    return title + (reporter ? '（报告人：' + reporter + '）' : '');
+  }).join('<br>');
 }
 
 function updatePreview() {
@@ -757,17 +757,17 @@ function updatePreview() {
 
     el.value = value;
 
-    // 更新资料整理折叠面板（扫描全历史，找任意一条有 extractedData 的消息）
+    // 更新资料来源折叠面板
     if (field.source === "chatHistory") {
-      const extractEl = document.getElementById(`extract-${cssId(field.sourceKey)}`);
-      if (extractEl) {
+      const ragsrcEl = document.getElementById(`ragsrc-${cssId(field.sourceKey)}`);
+      if (ragsrcEl) {
         const history = chatHistory[field.sourceKey] || [];
-        const found = [...history].reverse().find(m => m.role === "assistant" && m.extractedData);
+        const found = [...history].reverse().find(m => m.role === "assistant" && m.ragContext);
         if (found) {
-          extractEl.classList.remove("hidden");
-          extractEl.querySelector("div").innerHTML = formatExtractedData(found.extractedData);
+          ragsrcEl.classList.remove("hidden");
+          ragsrcEl.querySelector("div").innerHTML = formatRagTitles(found.ragContext);
         } else {
-          extractEl.classList.add("hidden");
+          ragsrcEl.classList.add("hidden");
         }
       }
     }

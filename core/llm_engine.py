@@ -257,22 +257,6 @@ def _extract_case_info(rag_context: str) -> str:
     return "\n".join(f"【检索片段 {i+1}】{e}" for i, e in enumerate(entries))
 
 
-def _strip_data_analysis(content: str) -> str:
-    """
-    Programmatic fallback: strip the '#资料分析' section from output,
-    keeping only '#AI推理' portion.
-    Handles both '#AI推理' and '# AI推理' variants.
-    """
-    if not content:
-        return content
-    # Try to find the AI reasoning section marker
-    for marker in ["#AI推理", "# AI推理"]:
-        idx = content.find(marker)
-        if idx != -1:
-            return content[idx + len(marker):].lstrip("\n").lstrip()
-    return content
-
-
 async def execute_pipeline(
     steps: list[dict[str, Any]],
     initial_vars: dict[str, str],
@@ -355,9 +339,6 @@ async def execute_pipeline(
     # 最后一步的输出作为最终结果
     final_output_var = steps[-1].get("output_var", f"step{len(steps)-1}_result")
     final_content = vars.get(final_output_var, "")
-
-    # 程序化兜底：如果 sanitize 未能完全剥离「资料分析」，强制截取「AI推理」部分
-    final_content = _strip_data_analysis(final_content)
 
     # 直接从 step1（extract）的输出中提取资料分析
     extracted_data = vars.get("extract_result", "")
