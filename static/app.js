@@ -451,7 +451,7 @@ async function handleGenerate(name) {
     let finalMessage = message;
     const baseline = lastBaseline[name] || "";
     if (current_content && baseline && current_content !== baseline) {
-      finalMessage = `用户已修改当前内容为：\n${current_content}\n\n用户消息：${message}`;
+      finalMessage = `用户已修改当前内容为：\n${current_content}\n\n【規則】請基於完整上下文記憶理解用戶意圖，但改寫的對象是上述「用戶已修改的当前内容」，而不是你之前回复的原文。\n\n用户消息：${message}`;
     }
 
     const res = await fetch("/api/generate", {
