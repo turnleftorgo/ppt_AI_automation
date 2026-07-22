@@ -11,4 +11,9 @@ services:
       - ./models:/app/models
       - ./static:/app/static
       - ./main.py:/app/main.py
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped

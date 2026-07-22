@@ -23,7 +23,10 @@ async def _get_http_client() -> httpx.AsyncClient:
     """Get or create a shared async HTTP client."""
     global _http_client
     if _http_client is None or _http_client.is_closed:
-        _http_client = httpx.AsyncClient(timeout=300.0)
+        _http_client = httpx.AsyncClient(
+        timeout=120.0,
+        limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+    )
     return _http_client
 
 

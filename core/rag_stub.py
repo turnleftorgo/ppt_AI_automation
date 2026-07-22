@@ -3,7 +3,7 @@ RAG context retriever — calls a Dify App (with knowledge base) for retrieval.
 """
 import os
 import re
-import requests
+import httpx
 
 
 RAG_DIFY_BASE_URL = os.getenv("RAG_DIFY_BASE_URL", "").strip().rstrip("/")
@@ -37,7 +37,8 @@ async def get_rag_context(rag_tag: str, query: str) -> str:
     }
 
     try:
-        resp = requests.post(url, headers=headers, json=body, timeout=60)
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(url, headers=headers, json=body)
         resp.raise_for_status()
         data = resp.json()
 

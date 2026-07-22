@@ -28,6 +28,12 @@ app = FastAPI(title="PPTX AI Generator")
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+
+# ── Health check ─────────────────────────────────────────────────────────────
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 # ── YAML template loader (loaded once at startup) ─────────────────────────────
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 yaml_loader = YAMLLoader(TEMPLATES_DIR)
