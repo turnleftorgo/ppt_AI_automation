@@ -13,6 +13,7 @@ from cachetools import TTLCache
 
 # ── Configuration (Dify API) ─────────────────────────────────────────────────
 DIFY_API_KEY = os.getenv("DIFY_API_KEY", "")
+DIFY_API_KEY_FLASH = os.getenv("DIFY_API_KEY_flash", "")
 DIFY_BASE_URL = os.getenv("DIFY_BASE_URL", "").rstrip("/")
 
 # ── Shared async HTTP client (connection pooling) ─────────────────────────────
@@ -37,15 +38,17 @@ _conversation_ids: TTLCache = TTLCache(maxsize=500, ttl=86400)
 _conversation_lock = asyncio.Lock()
 
 
-async def _call_dify(query: str, conversation_key: str, user: str = "", fresh: bool = False) -> dict:
+async def _call_dify(query: str, conversation_key: str, user: str = "", fresh: bool = False, api_key: str = "") -> dict:
     """Call Dify chat API and return the parsed JSON response.
 
     Args:
         fresh: If True, skip conversation_id reuse/cache (for pipeline steps).
+        api_key: Optional override for the API key (e.g. flash model key).
     """
+    effective_key = api_key or DIFY_API_KEY
     url = f"{DIFY_BASE_URL}/chat-messages"
     headers = {
-        "Authorization": f"Bearer {DIFY_API_KEY}",
+        "Authorization": f"Bearer {effective_key}",
         "Content-Type": "application/json",
     }
 
@@ -298,6 +301,20 @@ async def execute_pipeline(
     for i, step in enumerate(steps):
         step_name = step.get("name", f"step_{i}")
 
+        # 本地提取步骤：无需 LLM，直接正则提取 RAG 章节
+        if step.get("type") == "local_extract":
+            from core.rag_extractor import extract_sections_from_rag
+            section_key = step.get("section_key", "")
+            rag_ctx = vars.get("rag_context", "")
+            content_text = extract_sections_from_rag(rag_ctx, section_key)
+            output_var = step.get("output_var", f"step{i}_result")
+            vars[output_var] = content_text
+            debug[step_name] = {
+                "ack": f"已從知識庫本地提取資料（章節：{section_key}）",
+                "content": content_text,
+            }
+            continue
+
         # 收集该步骤需要的输入变量
         input_vars = {}
         for var_name in step.get("input_vars", []):
@@ -310,8 +327,11 @@ async def execute_pipeline(
         query = f"{system_prompt}\n\n---\n\n{rendered_prompt}" if system_prompt else rendered_prompt
         conversation_key = f"{conversation_prefix}:pipeline:{step_name}"
 
+        # 选择 API key：step 声明 model: flash 时用 flash key
+        step_api_key = DIFY_API_KEY_FLASH if step.get("model") == "flash" else ""
+
         try:
-            result = await _call_dify(query, conversation_key=conversation_key, user=user, fresh=True)
+            result = await _call_dify(query, conversation_key=conversation_key, user=user, fresh=True, api_key=step_api_key)
         except Exception as e:
             return {
                 "ack": f"[Pipeline 错误] step={step_name}",
